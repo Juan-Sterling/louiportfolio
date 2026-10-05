@@ -1,21 +1,21 @@
 import HeaderNav from "@/components/HeaderNav";
 import HeroSection from "@/components/HeroSection";
-import PortfolioGrid from "@/components/PortfolioGrid";
+import ModernGallery from "@/components/ModernGallery";
 import ContactSection from "@/components/ContactSection";
 
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col bg-[#edeced]">
-      {/* Top Navigation & Contact trigger */}
+      {/* Top Floating & Header Navigation */}
       <HeaderNav />
 
-      {/* Hero Header with Location, Logo, and Portfolio subtitle */}
+      {/* Modern Visual-First Hero */}
       <HeroSection />
 
-      {/* 2x2 Showcase Grid */}
-      <PortfolioGrid />
+      {/* Filterable Media Gallery with Fullscreen Lightbox & Video Player Modal */}
+      <ModernGallery />
 
-      {/* Dark Contact & Social Footer */}
+      {/* Contact & Social Channels Footer */}
       <ContactSection />
     </main>
   );
