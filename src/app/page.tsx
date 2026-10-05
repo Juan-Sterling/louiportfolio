@@ -6,16 +6,16 @@ import ContactSection from "@/components/ContactSection";
 export default function Home() {
   return (
     <main className="min-h-screen flex flex-col bg-[#edeced]">
-      {/* Top Floating & Header Navigation */}
+      {/* Top Floating Navbar (appears on scroll) */}
       <HeaderNav />
 
-      {/* Modern Visual-First Hero */}
+      {/* Hero Header with Location, Logo, and Portfolio subtitle */}
       <HeroSection />
 
-      {/* Filterable Media Gallery with Fullscreen Lightbox & Video Player Modal */}
+      {/* Modern Visual-First Masonry Gallery with Instant Filter & Fullscreen Lightbox */}
       <ModernGallery />
 
-      {/* Contact & Social Channels Footer */}
+      {/* Dark Contact & Social Footer */}
       <ContactSection />
     </main>
   );

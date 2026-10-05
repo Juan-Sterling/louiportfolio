@@ -30,17 +30,6 @@ export default function HeaderNav() {
 
   return (
     <>
-      {/* Top Canva-style initial Contact link in top right */}
-      <header className="w-full max-w-7xl mx-auto px-6 md:px-12 pt-6 md:pt-8 flex justify-end items-center z-30 relative">
-        <a
-          href="#contact"
-          onClick={(e) => scrollToSection(e, 'contact')}
-          className="text-xs md:text-sm font-semibold tracking-wider uppercase text-neutral-800 hover:text-black transition-colors duration-200 py-2 px-3 rounded-full hover:bg-black/5"
-        >
-          CONTACT
-        </a>
-      </header>
-
       {/* Floating Dynamic Navbar that smoothly appears when scrolling down */}
       <nav
         className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-out ${

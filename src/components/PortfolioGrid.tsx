@@ -109,12 +109,14 @@ export default function PortfolioGrid() {
 
   return (
     <section id="work" ref={gridRef} className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-24 md:pb-36">
-      {/* 2x2 Responsive Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 md:gap-8 lg:gap-10">
+      {/* Masonry Columns Grid */}
+      <div className="columns-1 md:columns-2 gap-5 sm:gap-6 md:gap-8 lg:gap-10">
         {portfolioItems.map((item, idx) => (
           <div
             key={item.id}
-            className="portfolio-card group relative aspect-[4/3.7] sm:aspect-[4/3.5] md:aspect-[1/1] w-full rounded-[28px] sm:rounded-[36px] md:rounded-[44px] overflow-hidden bg-neutral-300 shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition-all duration-500 hover:shadow-[0_24px_60px_rgba(0,0,0,0.18)]"
+            className={`portfolio-card break-inside-avoid mb-6 md:mb-8 group relative w-full ${
+              idx % 3 === 0 ? 'aspect-[4/5]' : idx % 3 === 1 ? 'aspect-[16/10]' : 'aspect-[1/1]'
+            } rounded-[28px] sm:rounded-[36px] md:rounded-[44px] overflow-hidden bg-neutral-300 shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition-all duration-500 hover:shadow-[0_24px_60px_rgba(0,0,0,0.18)] isolate`}
           >
             {/* Background Image with smooth zoom effect */}
             <div className="absolute inset-0 w-full h-full overflow-hidden">

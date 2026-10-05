@@ -1,144 +1,312 @@
+export type MainCategory = 'photography' | 'videography' | 'graphic-design' | 'loui-tee';
+
+export interface SubCategoryDef {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export interface CategoryGroup {
+  key: MainCategory;
+  label: string;
+  description: string;
+  subcategories: SubCategoryDef[];
+}
+
+export const CATEGORIES: CategoryGroup[] = [
+  {
+    key: 'photography',
+    label: 'Photography',
+    description: 'EVENT PHOTOSHOOT, MODEL PHOTOSHOOT, RETRO CAMERA, ‘CAT EYE’ PROJECT',
+    subcategories: [
+      {
+        key: 'event-photoshoot',
+        label: 'Event Photoshoot',
+        description: 'FOR BIRTHDAY, WEDDING, GRADUATION, OR MUSIC EVENT',
+      },
+      {
+        key: 'model-photoshoot',
+        label: 'Model Photoshoot',
+        description: 'FOR FAMILY POTRAIT, COUPLE, FRIENDS, AND ANOTHER MEMORIES WITH THE LOVED ONES',
+      },
+      {
+        key: 'retro-camera',
+        label: 'Retro Camera',
+        description: 'FOR THOSE WHO WANT SOMETHING BOLD, UNIQUE, AND TOUCH OF NOSTALGIA',
+      },
+      {
+        key: 'cat-eye-project',
+        label: "‘Cat Eye’ Project",
+        description: 'MY EXPERIMENTAL PROJECT, PORTRAYS THE LIVES OF STRAY CATS SURVIVING IN THE HUMAN WORLD.',
+      },
+    ],
+  },
+  {
+    key: 'videography',
+    label: 'Videography',
+    description: 'MUSIC VIDEO, CINEMATIC EDIT, COMPETITION',
+    subcategories: [
+      {
+        key: 'music-video',
+        label: 'Music Video',
+        description: 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG',
+      },
+      {
+        key: 'cinematic-edit',
+        label: 'Cinematic Edit',
+        description: '',
+      },
+      {
+        key: 'competition',
+        label: 'Competition',
+        description: 'THESE ARE SOME VIDEOS I’VE SUBMITTED FOR VIDEO COMPETITION',
+      },
+    ],
+  },
+  {
+    key: 'graphic-design',
+    label: 'Graphic Design',
+    description: 'KARBIDA FC, EVENT POSTERS, THUMBNAILS, RE-CREATE',
+    subcategories: [
+      {
+        key: 'karbida-fc',
+        label: 'Karbida FC',
+        description: 'FOOTBALL, COMIC-STYLE, FOR GANINDRA BIMO (INSTAGRAM FEEDS FORMAT)',
+      },
+      {
+        key: 'event-posters',
+        label: 'Event Posters',
+        description: 'INSTAGRAM FEEDS FORMAT (SQUARE, 1080 x 1080p)',
+      },
+      {
+        key: 'thumbnails',
+        label: 'Thumbnails',
+        description: 'MOSTLY, FOR YOUTUBE PLATFORM (1920 x 1080p)',
+      },
+      {
+        key: 're-create',
+        label: 'Re-create',
+        description: 'THE IDEA IS RE-CREATING BAND/MOVIES POSTER WITH MY CREATIVE WAY',
+      },
+    ],
+  },
+  {
+    key: 'loui-tee',
+    label: 'Loui Tee',
+    description: 'TEE PRODUCTION ©2025 — ‘BOOTLEG’ GRAPHIC TEE PRODUCTS & CUSTOM ORDER',
+    subcategories: [
+      {
+        key: 'graphic-tee',
+        label: 'Graphic Tee',
+        description: '‘BOOTLEG’ GRAPHIC TEE PRODUCTS (RELEASED SO FAR . . .)',
+      },
+      {
+        key: 'custom-order',
+        label: 'Custom Order',
+        description: 'YOU CAN ALSO GET YOUR OWN GRAPHIC TEE. JUST SAY THE WORD AND LET ME DO IT FOR YOU! HERE SOME OF THE RESULTS!',
+      },
+    ],
+  },
+];
+
 export interface MediaItem {
   id: string;
-  title: string;
-  subtitle: string;
-  category: 'photography' | 'videography' | 'graphic-design' | 'loui-tee';
+  category: MainCategory;
   categoryLabel: string;
+  subcategory: string;
+  subcategoryLabel: string;
+  description?: string;
   type: 'photo' | 'video';
   image: string;
   aspect: string; // e.g. 'aspect-[4/5]', 'aspect-[16/9]', 'aspect-[1/1]', 'aspect-[3/4]'
-  year: string;
-  client?: string;
-  location?: string;
-  tags: string[];
-  description: string;
-  specs?: string; // e.g. '35mm Film • Leica M6', 'Arri Alexa 35 • Anamorphic'
-  duration?: string; // For videos e.g. '02:45'
-  videoUrl?: string; // YouTube embed or video link
+  videoUrl?: string; // YouTube embed link for playable modal
 }
 
 export const portfolioItems: MediaItem[] = [
+  // --- PHOTOGRAPHY ---
   {
-    id: 'cinematic-reel-braga',
-    title: 'NIGHTS IN BRAGA',
-    subtitle: 'Cinematic Mood & Narrative Short',
-    category: 'videography',
-    categoryLabel: 'Videography',
-    type: 'video',
-    image: '/images/cinematic-reel.jpg',
+    id: 'photo-event-1',
+    category: 'photography',
+    categoryLabel: 'Photography',
+    subcategory: 'event-photoshoot',
+    subcategoryLabel: 'Event Photoshoot',
+    description: 'FOR BIRTHDAY, WEDDING, GRADUATION, OR MUSIC EVENT',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[4/5]',
+  },
+  {
+    id: 'photo-event-2',
+    category: 'photography',
+    categoryLabel: 'Photography',
+    subcategory: 'event-photoshoot',
+    subcategoryLabel: 'Event Photoshoot',
+    description: 'FOR BIRTHDAY, WEDDING, GRADUATION, OR MUSIC EVENT',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1200&auto=format&fit=crop',
     aspect: 'aspect-[16/9]',
-    year: '2025',
-    client: 'Independent Short Film',
-    location: 'Braga, Bandung',
-    tags: ['Cinematography', 'Directing', 'Color Grading', 'Narrative'],
-    description:
-      'A moody nocturnal character study captured along the historic rain-slicked streets of Jalan Braga, Bandung. Exploring intimate urban solitude through anamorphic framing and teal-amber color tonality.',
-    specs: 'Arri Alexa 35 • Anamorphic 50mm T2.0',
-    duration: '03:12',
-    videoUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1', // Fallback or channel video
   },
   {
-    id: 'braga-street-portrait',
-    title: 'STREETS OF BANDUNG',
-    subtitle: 'Golden Hour 35mm Street Portrait',
+    id: 'photo-model-1',
     category: 'photography',
     categoryLabel: 'Photography',
+    subcategory: 'model-photoshoot',
+    subcategoryLabel: 'Model Photoshoot',
+    description: 'FOR FAMILY POTRAIT, COUPLE, FRIENDS, AND ANOTHER MEMORIES WITH THE LOVED ONES',
     type: 'photo',
-    image: '/images/street-photography.jpg',
+    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[3/4]',
+  },
+  {
+    id: 'photo-model-2',
+    category: 'photography',
+    categoryLabel: 'Photography',
+    subcategory: 'model-photoshoot',
+    subcategoryLabel: 'Model Photoshoot',
+    description: 'FOR FAMILY POTRAIT, COUPLE, FRIENDS, AND ANOTHER MEMORIES WITH THE LOVED ONES',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?q=80&w=1200&auto=format&fit=crop',
     aspect: 'aspect-[4/5]',
-    year: '2025',
-    client: 'Personal Visual Journal',
-    location: 'Jl. Braga, Bandung',
-    tags: ['Street Portrait', '35mm Film', 'Natural Light', 'Bandung Culture'],
-    description:
-      'Candid portraiture capturing the vibrant spirit, charisma, and warmth of contemporary Indonesian youth amidst the colonial-era facades of historic Bandung.',
-    specs: 'Leica M6 • Summicron 35mm f/2 • Kodak Portra 400',
   },
   {
-    id: 'life-companions',
-    title: 'TIMELESS COMPANIONSHIP',
-    subtitle: 'Documentary Portrait of Lifelong Bond',
+    id: 'photo-retro-1',
     category: 'photography',
     categoryLabel: 'Photography',
+    subcategory: 'retro-camera',
+    subcategoryLabel: 'Retro Camera',
+    description: 'FOR THOSE WHO WANT SOMETHING BOLD, UNIQUE, AND TOUCH OF NOSTALGIA',
     type: 'photo',
-    image: '/images/photography.jpg',
-    aspect: 'aspect-[4/4]',
-    year: '2024',
-    client: 'Family Archive Series',
-    location: 'West Java, Indonesia',
-    tags: ['Documentary', 'Human Stories', 'Authentic Smiles', 'Warm Tone'],
-    description:
-      'An intimate and heartfelt portrait celebrating decades of love, resilience, and genuine companionship. Lit entirely by soft afternoon daylight.',
-    specs: 'Canon EOS R5 • RF 50mm f/1.2L USM',
+    image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[1/1]',
   },
   {
-    id: 'candid-motion-story',
-    title: 'MOMENTS IN MOTION',
-    subtitle: 'Documentary Short & Candid Film',
+    id: 'photo-cateye-1',
+    category: 'photography',
+    categoryLabel: 'Photography',
+    subcategory: 'cat-eye-project',
+    subcategoryLabel: "‘Cat Eye’ Project",
+    description: 'MY EXPERIMENTAL PROJECT, PORTRAYS THE LIVES OF STRAY CATS SURVIVING IN THE HUMAN WORLD.',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1509967419530-da38b4704bc6?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[4/5]',
+  },
+
+  // --- VIDEOGRAPHY ---
+  {
+    id: 'video-mv-1',
     category: 'videography',
     categoryLabel: 'Videography',
+    subcategory: 'music-video',
+    subcategoryLabel: 'Music Video',
+    description: 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG',
     type: 'video',
-    image: '/images/videography.png',
-    aspect: 'aspect-[4/5]',
-    year: '2024',
-    client: 'Visual Diary Project',
-    location: 'Bandung',
-    tags: ['Candid Motion', 'Directing', 'Everyday Poetry'],
-    description:
-      'Unchoreographed documentary motion capturing childhood innocence and the subtle, fleeting beauty of everyday domestic life.',
-    specs: 'Sony FX3 • Sony 24-70mm f/2.8 GM II • S-Log3',
-    duration: '01:45',
-    videoUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1',
+    image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[16/9]',
+    videoUrl: 'https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1',
   },
   {
-    id: 'brutalist-archives-tee',
-    title: 'BRUTALIST ARCHIVES TEE',
-    subtitle: 'Architectural Streetwear Lookbook',
-    category: 'loui-tee',
-    categoryLabel: 'Loui Tee',
-    type: 'photo',
-    image: '/images/editorial-tee.jpg',
-    aspect: 'aspect-[4/5]',
-    year: '2025',
-    client: 'LOUI Official Apparel',
-    location: 'Brutalist Concrete Pavilion, Bandung',
-    tags: ['Apparel', 'Lookbook', 'Streetwear', 'Graphic Tee'],
-    description:
-      'Visual lookbook for the Brutalist Archives drop, photographed against raw architectural concrete. Heavyweight 24s combed cotton with oversized boxy cut.',
-    specs: 'Fujifilm GFX 100S • GF 45mm f/2.8',
+    id: 'video-cinematic-1',
+    category: 'videography',
+    categoryLabel: 'Videography',
+    subcategory: 'cinematic-edit',
+    subcategoryLabel: 'Cinematic Edit',
+    type: 'video',
+    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[16/9]',
+    videoUrl: 'https://www.youtube.com/embed/g1j1ufqg8ng?autoplay=1',
   },
   {
-    id: 'classical-fine-art',
-    title: 'SACRED COMPOSITION',
-    subtitle: 'Fine Art & Classical Graphic Direction',
+    id: 'video-competition-1',
+    category: 'videography',
+    categoryLabel: 'Videography',
+    subcategory: 'competition',
+    subcategoryLabel: 'Competition',
+    description: 'THESE ARE SOME VIDEOS I’VE SUBMITTED FOR VIDEO COMPETITION',
+    type: 'video',
+    image: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[4/5]',
+    videoUrl: 'https://www.youtube.com/embed/qm2ZoAJPGTg?autoplay=1',
+  },
+  {
+    id: 'video-mv-2',
+    category: 'videography',
+    categoryLabel: 'Videography',
+    subcategory: 'music-video',
+    subcategoryLabel: 'Music Video',
+    description: 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG',
+    type: 'video',
+    image: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[16/9]',
+    videoUrl: 'https://www.youtube.com/embed/82GMXxyepLc?autoplay=1',
+  },
+
+  // --- GRAPHIC DESIGN ---
+  {
+    id: 'gd-karbida-1',
     category: 'graphic-design',
     categoryLabel: 'Graphic Design',
+    subcategory: 'karbida-fc',
+    subcategoryLabel: 'Karbida FC',
+    description: 'FOOTBALL, COMIC-STYLE, FOR GANINDRA BIMO (INSTAGRAM FEEDS FORMAT)',
     type: 'photo',
-    image: '/images/graphic-design.png',
+    image: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=1200&auto=format&fit=crop',
     aspect: 'aspect-[1/1]',
-    year: '2024',
-    client: 'Art & Exhibition Identity',
-    location: 'Bandung',
-    tags: ['Fine Art', 'Editorial Design', 'Composition', 'Visual Art'],
-    description:
-      'Dramatic chiaroscuro digital artwork and fine art layout direction blending Renaissance compositional harmony with contemporary editorial precision.',
-    specs: 'Digital Medium • Adobe Suite & Mixed Media',
   },
   {
-    id: 'cristiano-ronaldo-vintage-tee',
-    title: 'LEGENDS VINTAGE BOOTLEG',
-    subtitle: '90s Sports Graphic Screenprint Drop',
+    id: 'gd-posters-1',
+    category: 'graphic-design',
+    categoryLabel: 'Graphic Design',
+    subcategory: 'event-posters',
+    subcategoryLabel: 'Event Posters',
+    description: 'INSTAGRAM FEEDS FORMAT (SQUARE, 1080 x 1080p)',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[3/4]',
+  },
+  {
+    id: 'gd-thumbnails-1',
+    category: 'graphic-design',
+    categoryLabel: 'Graphic Design',
+    subcategory: 'thumbnails',
+    subcategoryLabel: 'Thumbnails',
+    description: 'MOSTLY, FOR YOUTUBE PLATFORM (1920 x 1080p)',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[16/9]',
+  },
+  {
+    id: 'gd-recreate-1',
+    category: 'graphic-design',
+    categoryLabel: 'Graphic Design',
+    subcategory: 're-create',
+    subcategoryLabel: 'Re-create',
+    description: 'THE IDEA IS RE-CREATING BAND/MOVIES POSTER WITH MY CREATIVE WAY',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[1/1]',
+  },
+
+  // --- LOUI TEE ---
+  {
+    id: 'tee-graphic-1',
     category: 'loui-tee',
     categoryLabel: 'Loui Tee',
+    subcategory: 'graphic-tee',
+    subcategoryLabel: 'Graphic Tee',
+    description: '‘BOOTLEG’ GRAPHIC TEE PRODUCTS (RELEASED SO FAR . . .)',
     type: 'photo',
-    image: '/images/loui-tee.png',
+    image: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?q=80&w=1200&auto=format&fit=crop',
     aspect: 'aspect-[4/5]',
-    year: '2025',
-    client: 'LOUI Official Apparel',
-    location: 'Bandung',
-    tags: ['Vintage Bootleg', 'Apparel Design', 'Merchandise', 'Tokopedia / Shopee'],
-    description:
-      'High-density screenprint graphic t-shirt inspired by vintage 1990s championship apparel. Washed charcoal heavyweight fabric with distressed textural depth.',
-    specs: 'Heavyweight 24s Cotton • Vintage Screenprint',
+  },
+  {
+    id: 'tee-custom-1',
+    category: 'loui-tee',
+    categoryLabel: 'Loui Tee',
+    subcategory: 'custom-order',
+    subcategoryLabel: 'Custom Order',
+    description: 'YOU CAN ALSO GET YOUR OWN GRAPHIC TEE. JUST SAY THE WORD AND LET ME DO IT FOR YOU! HERE SOME OF THE RESULTS!',
+    type: 'photo',
+    image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?q=80&w=1200&auto=format&fit=crop',
+    aspect: 'aspect-[4/5]',
   },
 ];

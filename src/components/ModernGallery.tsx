@@ -4,39 +4,78 @@ import React, { useState, useMemo } from 'react';
 import Image from 'next/image';
 import {
   Play,
-  Maximize2,
-  Camera,
-  Film,
-  ArrowUpRight,
+  Layers,
 } from 'lucide-react';
-import { portfolioItems } from '@/data/portfolioData';
+import {
+  portfolioItems,
+  CATEGORIES,
+  MainCategory,
+  MediaItem,
+} from '@/data/portfolioData';
 import MediaLightbox from './MediaLightbox';
 
-type CategoryFilter = 'all' | 'photography' | 'videography' | 'graphic-design' | 'loui-tee';
-
-interface FilterOption {
-  key: CategoryFilter;
-  label: string;
-}
-
-const filterOptions: FilterOption[] = [
-  { key: 'all', label: 'All Works' },
-  { key: 'photography', label: 'Photography' },
-  { key: 'videography', label: 'Videography' },
-  { key: 'graphic-design', label: 'Graphic Design' },
-  { key: 'loui-tee', label: 'Loui Tee' },
-];
+type CategoryFilter = 'all' | MainCategory;
 
 export default function ModernGallery() {
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
+  const [activeSubcategory, setActiveSubcategory] = useState<string>('all');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
-  // Filter items without page reload
-  const filteredItems = useMemo(() => {
-    if (activeCategory === 'all') return portfolioItems;
-    return portfolioItems.filter((item) => item.category === activeCategory);
+  // Available subcategories for currently active category
+  const currentSubcategories = useMemo(() => {
+    if (activeCategory === 'all') return [];
+    const catGroup = CATEGORIES.find((c) => c.key === activeCategory);
+    return catGroup ? catGroup.subcategories : [];
   }, [activeCategory]);
+
+  // Handle switching main category
+  const handleSelectCategory = (catKey: CategoryFilter) => {
+    setActiveCategory(catKey);
+    setActiveSubcategory('all'); // Reset subcategory filter when switching main category
+  };
+
+  // Filter items based on activeCategory and activeSubcategory
+  const filteredItems = useMemo(() => {
+    let items: MediaItem[] = portfolioItems;
+
+    if (activeCategory !== 'all') {
+      items = items.filter((item) => item.category === activeCategory);
+    }
+
+    if (activeSubcategory !== 'all') {
+      items = items.filter((item) => item.subcategory === activeSubcategory);
+    }
+
+    return items;
+  }, [activeCategory, activeSubcategory]);
+
+  // Active headline title for the Masthead (Option 1)
+  const activeTitle = useMemo(() => {
+    if (activeCategory === 'all') return 'SELECTED WORKS';
+    if (activeSubcategory !== 'all') {
+      const sub = currentSubcategories.find((s) => s.key === activeSubcategory);
+      if (sub) return sub.label;
+    }
+    const cat = CATEGORIES.find((c) => c.key === activeCategory);
+    return cat ? cat.label : 'SELECTED WORKS';
+  }, [activeCategory, activeSubcategory, currentSubcategories]);
+
+  // Active tagline/description matching Canva's category subtitles
+  const activeDescription = useMemo(() => {
+    if (activeCategory === 'all') {
+      return 'A CURATED SELECTION ACROSS PHOTOGRAPHY, VIDEOGRAPHY, GRAPHIC DESIGN & APPAREL';
+    }
+    const catGroup = CATEGORIES.find((c) => c.key === activeCategory);
+    if (!catGroup) return '';
+
+    if (activeSubcategory !== 'all') {
+      const sub = catGroup.subcategories.find((s) => s.key === activeSubcategory);
+      return sub ? (sub.description ?? '') : '';
+    }
+
+    return catGroup.description;
+  }, [activeCategory, activeSubcategory]);
 
   const openLightbox = (index: number) => {
     setActiveMediaIndex(index);
@@ -45,128 +84,174 @@ export default function ModernGallery() {
 
   return (
     <section id="work" className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-28 md:pb-36">
-      {/* Category Filter Tabs Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 mb-10 pb-6 border-b border-black/10">
-        <div>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-500 block mb-1">
-            EXPLORE PORTFOLIO
-          </span>
-          <h2 className="font-heading font-bold text-3xl sm:text-4xl uppercase tracking-tight text-neutral-900">
-            SELECTED WORKS
-          </h2>
-        </div>
+      {/* Category Navigation Bar */}
+      <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-black/10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-neutral-500 block mb-1">
+              PORTFOLIO SHOWCASE
+            </span>
+            <h2 className="font-heading font-bold text-3xl sm:text-4xl uppercase tracking-tight text-neutral-900">
+              SELECTED WORKS
+            </h2>
+          </div>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-2">
-          {filterOptions.map((opt) => {
-            const count =
-              opt.key === 'all'
-                ? portfolioItems.length
-                : portfolioItems.filter((i) => i.category === opt.key).length;
+          {/* Primary Category Tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleSelectCategory('all')}
+              className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider px-4 py-2.5 rounded-full transition-all duration-300 ${activeCategory === 'all'
+                ? 'bg-neutral-900 text-[#edeced] shadow-md scale-105'
+                : 'bg-white/80 hover:bg-white text-neutral-700 hover:text-black border border-black/5 hover:border-black/15'
+                }`}
+            >
+              <span>All Works</span>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${activeCategory === 'all' ? 'bg-white/20 text-white' : 'bg-black/5 text-neutral-600'
+                  }`}
+              >
+                {portfolioItems.length}
+              </span>
+            </button>
 
-            const isActive = activeCategory === opt.key;
+            {CATEGORIES.map((cat) => {
+              const count = portfolioItems.filter((i) => i.category === cat.key).length;
+              const isActive = activeCategory === cat.key;
 
-            return (
-              <button
-                key={opt.key}
-                onClick={() => setActiveCategory(opt.key)}
-                className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-full transition-all duration-300 ${
-                  isActive
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => handleSelectCategory(cat.key)}
+                  className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider px-4 py-2.5 rounded-full transition-all duration-300 ${isActive
                     ? 'bg-neutral-900 text-[#edeced] shadow-md scale-105'
                     : 'bg-white/80 hover:bg-white text-neutral-700 hover:text-black border border-black/5 hover:border-black/15'
-                }`}
-              >
-                <span>{opt.label}</span>
-                <span
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-black/5 text-neutral-600'
-                  }`}
+                    }`}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+                  <span>{cat.label}</span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-black/5 text-neutral-600'
+                      }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+
+        {/* Subcategory Pills Row (rendered when a category is selected) */}
+        {currentSubcategories.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 animate-fadeIn">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-neutral-600 flex items-center gap-1.5 mr-2">
+              <Layers className="w-3 h-3 text-neutral-600" />
+            </span>
+
+            {/* All in Category button */}
+            <button
+              onClick={() => setActiveSubcategory('all')}
+              className={`text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${activeSubcategory === 'all'
+                ? 'bg-black text-white font-semibold shadow-sm'
+                : 'bg-neutral-200/70 hover:bg-neutral-300/80 text-neutral-700'
+                }`}
+            >
+              All {CATEGORIES.find((c) => c.key === activeCategory)?.label}
+            </button>
+
+            {/* Subcategory buttons */}
+            {currentSubcategories.map((sub) => {
+              const subCount = portfolioItems.filter(
+                (i) => i.category === activeCategory && i.subcategory === sub.key
+              ).length;
+              const isSubActive = activeSubcategory === sub.key;
+
+              return (
+                <button
+                  key={sub.key}
+                  onClick={() => setActiveSubcategory(sub.key)}
+                  className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${isSubActive
+                    ? 'bg-black text-white font-semibold shadow-sm'
+                    : 'bg-neutral-200/70 hover:bg-neutral-300/80 text-neutral-700'
+                    }`}
+                >
+                  <span>{sub.label}</span>
+                  <span
+                    className={`text-[9px] font-mono px-1 py-0.2 rounded-full ${isSubActive ? 'bg-white/20 text-white' : 'bg-black/10 text-neutral-600'
+                      }`}
+                  >
+                    {subCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Modern Visual-First Masonry / Multi-column Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 items-start">
+      {/* Modern Visual-First Gallery: True Masonry Columns Layout */}
+      <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]">
+        {/* Unboxed Editorial Statement (Option 4: In-grid typography without card container) */}
+        {activeCategory !== 'all' && (
+          <div className="break-inside-avoid mb-8 md:mb-10 py-3 md:py-4 px-1 select-none flex flex-col justify-center">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                {activeSubcategory !== 'all'
+                  ? `${CATEGORIES.find((c) => c.key === activeCategory)?.label} - ${activeTitle}`
+                  : `ALL ${CATEGORIES.find((c) => c.key === activeCategory)?.label}`}
+              </span>
+            </div>
+
+            <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+              {activeTitle}
+            </h3>
+
+            {activeDescription && (
+              <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
+                {activeDescription}
+              </p>
+            )}
+
+          </div>
+        )}
         {filteredItems.map((item, idx) => (
           <div
             key={item.id}
             onClick={() => openLightbox(idx)}
-            className="group relative cursor-pointer overflow-hidden rounded-[28px] md:rounded-[36px] bg-neutral-200 shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_50px_rgb(0,0,0,0.16)] transition-all duration-500"
+            className="break-inside-avoid mb-6 md:mb-7 group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
           >
             {/* Aspect container */}
             <div className={`relative w-full ${item.aspect} overflow-hidden`}>
               <Image
                 src={item.image}
-                alt={item.title}
+                alt={item.subcategoryLabel}
                 fill
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                 className="object-cover object-center transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
               />
 
-              {/* Ambient overlay gradient for clean hover */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-black/10 opacity-40 group-hover:opacity-85 transition-opacity duration-300" />
+              {/* Clean Subtle Gradient for Contrast on Tag */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300" />
 
-              {/* Top Floating Badge (Category & Media Type Indicator) */}
-              <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
-                <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wider uppercase text-white/90 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
-                  {item.type === 'video' ? (
-                    <Film className="w-3 h-3 text-amber-300" />
-                  ) : (
-                    <Camera className="w-3 h-3 text-blue-300" />
-                  )}
-                  <span>{item.categoryLabel}</span>
-                </span>
-
-                {/* Video Duration or Expand pill */}
-                {item.type === 'video' ? (
-                  <span className="flex items-center gap-1 text-[11px] font-mono font-medium text-white/90 bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 backdrop-blur-md px-2.5 py-1 rounded-full">
-                    <Play className="w-2.5 h-2.5 fill-current" />
-                    <span>{item.duration || 'Watch'}</span>
-                  </span>
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-white/15 hover:bg-white text-white hover:text-black flex items-center justify-center backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all duration-200">
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </div>
-                )}
-              </div>
-
-              {/* Central Video Teaser Hover Pulse for Video items */}
+              {/* Central Video Play Indicator for video items */}
               {item.type === 'video' && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                  <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white/90 text-black flex items-center justify-center shadow-2xl backdrop-blur-md transition-all duration-500 transform scale-90 opacity-80 group-hover:scale-110 group-hover:opacity-100 group-hover:bg-white">
-                    <Play className="w-7 h-7 md:w-8 md:h-8 fill-current translate-x-0.5" />
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
+                    <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
                   </div>
                 </div>
               )}
 
-              {/* Bottom Info Card: Elegant, clean, non-intrusive */}
-              <div className="absolute bottom-0 left-0 right-0 p-5 md:p-6 flex flex-col justify-end text-white z-10 transition-transform duration-300 transform translate-y-1 group-hover:translate-y-0">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-300">
-                    {item.client || item.categoryLabel}
+              {/* Bottom Tag: Category & Subcategory ONLY */}
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-10">
+                <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm">
+                  {item.subcategoryLabel}
+                </span>
+
+                {item.type === 'video' && (
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-300 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-emerald-500/20">
+                    Video
                   </span>
-                  <span className="text-[10px] font-mono text-neutral-400">{item.year}</span>
-                </div>
-
-                <h3 className="font-heading font-bold text-xl md:text-2xl uppercase tracking-tight text-white leading-tight">
-                  {item.title}
-                </h3>
-
-                <p className="text-xs text-neutral-300/90 font-sans mt-1 line-clamp-1">
-                  {item.subtitle}
-                </p>
-
-                {/* Specs metadata tag */}
-                {item.specs && (
-                  <div className="mt-2.5 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px] text-neutral-300 font-mono">
-                    <span className="truncate max-w-[80%]">{item.specs}</span>
-                    <ArrowUpRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 transition-opacity" />
-                  </div>
                 )}
               </div>
             </div>
