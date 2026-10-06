@@ -101,14 +101,100 @@ html.lenis body {
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 9999px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.25);
   border-radius: 9999px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
+}
+
+/* ==================================================== */
+/* ENTRANCE ANIMATIONS (Page load & reload)             */
+/* ==================================================== */
+
+@keyframes entranceFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes entranceScaleUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.93);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes entranceCardFade {
+  0% {
+    opacity: 0;
+    transform: translateY(32px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes entranceSimpleFade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-entrance-hero-left {
+  animation: entranceFadeUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+}
+
+.animate-entrance-hero-center {
+  animation: entranceScaleUp 0.95s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
+}
+
+.animate-entrance-hero-right {
+  animation: entranceFadeUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both;
+}
+
+.animate-entrance-nav {
+  animation: entranceFadeUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both;
+}
+
+.animate-entrance-card {
+  animation: entranceCardFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fadeIn {
+  animation: entranceSimpleFade 0.4s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-entrance-hero-left,
+  .animate-entrance-hero-center,
+  .animate-entrance-hero-right,
+  .animate-entrance-nav,
+  .animate-entrance-card,
+  .animate-fadeIn {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

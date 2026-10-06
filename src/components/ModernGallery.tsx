@@ -6,6 +6,8 @@ import {
   Play,
   Layers,
   Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   portfolioItems as fallbackPortfolioItems,
@@ -66,29 +68,63 @@ function interleaveMediaItems(items: MediaItem[]): MediaItem[] {
   return result;
 }
 
-export default function ModernGallery() {
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [items, setItems] = useState<MediaItem[]>(fallbackPortfolioItems);
+interface ModernGalleryProps {
+  initialCategories?: GalleryCategory[];
+  initialItems?: MediaItem[];
+}
+
+export default function ModernGallery({
+  initialCategories,
+  initialItems,
+}: ModernGalleryProps = {}) {
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [hasMounted, setHasMounted] = useState<boolean>(false);
+  const [items, setItems] = useState<MediaItem[]>(
+    initialItems && initialItems.length > 0 ? initialItems : fallbackPortfolioItems
+  );
   const [categories, setCategories] = useState<GalleryCategory[]>(
-    fallbackCategories.map((c) => ({
-      id: c.key,
-      label: c.label,
-      description: c.description,
-      subcategories: c.subcategories.map((s) => ({
-        id: s.key,
-        label: s.label,
-        description: s.description,
-      })),
-    }))
+    initialCategories && initialCategories.length > 0
+      ? initialCategories
+      : fallbackCategories.map((c) => ({
+          id: c.key,
+          label: c.label,
+          description: c.description,
+          subcategories: c.subcategories.map((s) => ({
+            id: s.key,
+            label: s.label,
+            description: s.description,
+          })),
+        }))
   );
 
+  const ITEMS_PER_PAGE = 12;
+  const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [activeSubcategory, setActiveSubcategory] = useState<string>('all');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
 
-  // Fetch live portfolio data from Database
+  // Sync if server props change
   useEffect(() => {
+    if (initialItems && initialItems.length > 0) {
+      setItems(initialItems);
+    }
+  }, [initialItems]);
+
+  useEffect(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      setCategories(initialCategories);
+    }
+  }, [initialCategories]);
+
+  // Fetch live portfolio data from Database if not provided by server
+  useEffect(() => {
+    setHasMounted(true);
+
+    if (initialItems && initialItems.length > 0) {
+      return;
+    }
+
     async function fetchDatabaseData() {
       if (!isSupabaseConfigured || !supabase) {
         setIsLoading(false);
@@ -203,8 +239,14 @@ export default function ModernGallery() {
   const handleSelectCategory = (catId: string) => {
     setActiveCategory(catId);
     setActiveSubcategory('all'); // Reset subcategory filter when switching main category
+    setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
   };
 
+  // Handle switching subcategory
+  const handleSelectSubcategory = (subId: string) => {
+    setActiveSubcategory(subId);
+    setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
+  };
 
   // Filter items based on activeCategory and activeSubcategory
   const filteredItems = useMemo(() => {
@@ -234,6 +276,35 @@ export default function ModernGallery() {
 
     return result;
   }, [items, activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
+
+  // Fitur Load More / Show Less disimpan (di-keep), saat ini dinonaktifkan sementara menunggu persetujuan client
+  // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
+  const ENABLE_LOAD_MORE = false;
+
+  // Displayed items slice based on Load More count (atau tampil penuh jika nonaktif)
+  const displayedItems = useMemo(() => {
+    if (!ENABLE_LOAD_MORE) return filteredItems;
+    return filteredItems.slice(0, visibleCount);
+  }, [filteredItems, visibleCount, ENABLE_LOAD_MORE]);
+
+  const hasMore = visibleCount < filteredItems.length;
+  const remainingCount = Math.max(0, filteredItems.length - visibleCount);
+
+  const handleLoadMore = () => {
+    setVisibleCount((prev) => prev + ITEMS_PER_PAGE);
+  };
+
+  const handleShowAll = () => {
+    setVisibleCount(filteredItems.length);
+  };
+
+  const handleShowLess = () => {
+    setVisibleCount(ITEMS_PER_PAGE);
+    const workSection = document.getElementById('work');
+    if (workSection) {
+      workSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   // Active headline title for the Masthead
   const activeTitle = useMemo(() => {
@@ -269,7 +340,7 @@ export default function ModernGallery() {
   return (
     <section id="work" className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-28 md:pb-36">
       {/* Category Navigation Bar */}
-      <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-black/10">
+      <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-black/10 animate-entrance-nav">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-neutral-500 block mb-1">
@@ -350,7 +421,7 @@ export default function ModernGallery() {
 
             {/* All in Category button */}
             <button
-              onClick={() => setActiveSubcategory('all')}
+              onClick={() => handleSelectSubcategory('all')}
               className={`text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${
                 activeSubcategory === 'all'
                   ? 'bg-black text-white font-semibold shadow-sm'
@@ -373,7 +444,7 @@ export default function ModernGallery() {
               return (
                 <button
                   key={sub.id}
-                  onClick={() => setActiveSubcategory(sub.id)}
+                  onClick={() => handleSelectSubcategory(sub.id)}
                   className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${
                     isSubActive
                       ? 'bg-black text-white font-semibold shadow-sm'
@@ -469,10 +540,19 @@ export default function ModernGallery() {
               </p>
             </div>
           ) : (
-            <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]">
+            <>
+              <div
+                key={`${activeCategory}-${activeSubcategory}`}
+                className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]"
+              >
               {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
               {activeCategory !== 'all' && (
-                <div className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center">
+                <div
+                  className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                  style={{
+                    animationDelay: `${hasMounted ? 35 : 360}ms`,
+                  }}
+                >
                   <div className="flex items-center gap-2 mb-3">
                     <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
                     <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
@@ -494,54 +574,139 @@ export default function ModernGallery() {
                 </div>
               )}
 
-              {filteredItems.map((item, idx) => {
+              {displayedItems.map((item, idx) => {
                 const itemThumbnail =
                   item.type === 'video' && item.videoUrl
                     ? getYouTubeThumbnail(item.videoUrl) || item.image
                     : item.image;
 
+                const baseDelay = hasMounted ? 35 : 380;
+                const stepDelay = hasMounted ? 35 : 55;
+                const cardDelay = Math.min(idx * stepDelay + baseDelay, hasMounted ? 450 : 950);
+                const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+
                 return (
                   <div
                     key={item.id}
-                    onClick={() => openLightbox(idx)}
-                    className="break-inside-avoid mb-6 md:mb-7 group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
+                    className="break-inside-avoid mb-6 md:mb-7 animate-entrance-card"
+                    style={{
+                      animationDelay: `${cardDelay}ms`,
+                    }}
                   >
-                    {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}
-                    <div className="relative w-full overflow-hidden">
-                      <Image
-                        src={itemThumbnail}
-                        alt={item.subcategoryLabel}
-                        width={1200}
-                        height={1200}
-                        unoptimized
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                        className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
-                      />
+                    <div
+                      onClick={() => openLightbox(fullIndex !== -1 ? fullIndex : idx)}
+                      className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
+                    >
+                      {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}
+                      <div className="relative w-full overflow-hidden">
+                        <Image
+                          src={itemThumbnail}
+                          alt={item.subcategoryLabel}
+                          width={1200}
+                          height={1200}
+                          unoptimized
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                          className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
+                        />
 
-                      {/* Clean Subtle Gradient for Contrast on Tag */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300 pointer-events-none" />
+                        {/* Clean Subtle Gradient for Contrast on Tag */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300 pointer-events-none" />
 
-                      {/* Central Video Play Indicator for video items */}
-                      {item.type === 'video' && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                          <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
-                            <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
+                        {/* Central Video Play Indicator for video items */}
+                        {item.type === 'video' && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                            <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
+                              <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Bottom-Left Tag: Subcategory Only */}
-                      <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
-                        <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm inline-block">
-                          {item.subcategoryLabel}
-                        </span>
+                        {/* Bottom-Left Tag: Subcategory Only */}
+                        <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
+                          <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm inline-block">
+                            {item.subcategoryLabel}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
+
+            {/* 
+              ========================================================================
+              LOAD MORE / SHOW LESS CONTROLLER (DI-KEEP / SEMENTARA NONAKTIF)
+              Untuk mengaktifkan kembali, ubah konstanta ENABLE_LOAD_MORE = true di atas
+              ========================================================================
+            */}
+            {ENABLE_LOAD_MORE && filteredItems.length > ITEMS_PER_PAGE && (
+              <div className="mt-14 md:mt-20 flex flex-col items-center justify-center gap-3.5 text-center">
+                {hasMore ? (
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    {/* Primary Load More Button */}
+                    <button
+                      onClick={handleLoadMore}
+                      className="group flex items-center gap-3 px-8 py-4 rounded-full bg-neutral-900 text-[#edeced] font-sans text-xs font-semibold uppercase tracking-[0.18em] shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-[0_16px_40px_rgb(0,0,0,0.22)] hover:bg-black transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0"
+                    >
+                      <span>Load More Works</span>
+                      <span className="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-mono tracking-normal text-white group-hover:bg-white/30 transition-colors">
+                        +{Math.min(ITEMS_PER_PAGE, remainingCount)}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-neutral-400 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
+                    </button>
+
+                    {/* Quick Show All Button if remaining is more than 6 */}
+                    {remainingCount > 6 && (
+                      <button
+                        onClick={handleShowAll}
+                        className="px-5 py-3.5 rounded-full bg-transparent hover:bg-black/5 text-neutral-700 hover:text-black font-sans text-xs font-semibold uppercase tracking-wider transition-colors border border-black/10"
+                      >
+                        Show All ({filteredItems.length})
+                      </button>
+                    )}
+
+                    {/* Show Less Button (if currently expanded beyond initial batch) */}
+                    {visibleCount > ITEMS_PER_PAGE && (
+                      <button
+                        onClick={handleShowLess}
+                        className="group flex items-center gap-2 px-6 py-3.5 rounded-full bg-white/80 hover:bg-white text-neutral-800 hover:text-black font-sans text-xs font-semibold uppercase tracking-wider transition-all duration-200 border border-black/10 shadow-sm hover:shadow active:scale-95"
+                      >
+                        <span>Show Less</span>
+                        <ChevronUp className="w-3.5 h-3.5 text-neutral-500 group-hover:text-black transition-transform group-hover:-translate-y-0.5" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    {/* Status indicator when all items are loaded */}
+                    <div className="flex items-center gap-3 py-3 px-5 rounded-full bg-black/5 text-xs font-mono uppercase tracking-widest text-neutral-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-600" />
+                      <span>All {filteredItems.length} Works Displayed</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-600" />
+                    </div>
+
+                    {/* Show Less Button */}
+                    {visibleCount > ITEMS_PER_PAGE && (
+                      <button
+                        onClick={handleShowLess}
+                        className="group flex items-center gap-2 px-6 py-3 rounded-full bg-neutral-900 hover:bg-black text-[#edeced] font-sans text-xs font-semibold uppercase tracking-wider transition-all duration-300 shadow-md hover:-translate-y-0.5 active:translate-y-0"
+                      >
+                        <span>Show Less</span>
+                        <ChevronUp className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-transform group-hover:-translate-y-0.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Progress Counter */}
+                <p className="text-[11px] font-mono tracking-wider text-neutral-500 uppercase">
+                  Showing {displayedItems.length} of {filteredItems.length} projects
+                </p>
+              </div>
+            )}
+          </>
+        )}
         </div>
       )}
 

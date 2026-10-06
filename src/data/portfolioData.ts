@@ -126,14 +126,29 @@ export interface MediaItem {
 
 /**
  * Extracts YouTube video ID from various YouTube URL formats
- * (embeds, watch?v=, youtu.be, shorts)
+ * (embeds, watch?v=, youtu.be, shorts, parameters like ?si=)
  */
 export function getYouTubeVideoId(url?: string): string | null {
   if (!url) return null;
-  const match = url.match(
-    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
+  const cleanUrl = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(cleanUrl)) {
+    return cleanUrl;
+  }
+  const match = cleanUrl.match(
+    /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i
   );
   return match ? match[1] : null;
+}
+
+/**
+ * Converts any YouTube URL or video ID into a clean, embeddable YouTube URL
+ * that bypasses X-Frame-Options blocking.
+ */
+export function getYouTubeEmbedUrl(urlOrId?: string, autoplay: boolean = true): string {
+  if (!urlOrId) return '';
+  const videoId = getYouTubeVideoId(urlOrId);
+  if (!videoId) return urlOrId;
+  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1`;
 }
 
 /**
@@ -145,8 +160,7 @@ export function getYouTubeThumbnail(
   quality: 'maxresdefault' | 'hqdefault' = 'maxresdefault'
 ): string {
   if (!urlOrId) return '';
-  const isDirectId = /^[a-zA-Z0-9_-]{11}$/.test(urlOrId);
-  const videoId = isDirectId ? urlOrId : getYouTubeVideoId(urlOrId);
+  const videoId = getYouTubeVideoId(urlOrId);
   if (!videoId) return urlOrId;
   return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
 }
