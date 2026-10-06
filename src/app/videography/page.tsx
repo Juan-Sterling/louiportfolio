@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, Play, Film } from 'lucide-react';
 import ContactSection from '@/components/ContactSection';
+import { getYouTubeThumbnail } from '@/data/portfolioData';
 
 export const metadata = {
   title: 'Videography — LOUI Portfolio',
@@ -12,22 +13,32 @@ export const metadata = {
 export default function VideographyPage() {
   const videoWorks = [
     {
-      title: 'MOMENTS IN MOTION',
-      category: 'Documentary Short',
-      duration: '03:45',
-      description: 'Poetic documentation capturing subtle nuances of life and everyday movement.',
+      title: 'MUSIC VIDEO EDIT',
+      category: 'Music Video',
+      youtubeId: 'XyLoPRmUR3s',
+      description: 'Music video editing for official song and cover song projects, blending dynamic pacing and rhythm.',
+      url: 'https://www.youtube.com/watch?v=XyLoPRmUR3s',
     },
     {
-      title: 'URBAN VIBES & RHYTHM',
-      category: 'Commercial & Lifestyle',
-      duration: '01:30',
-      description: 'Fast-paced rhythmic editing celebrating youth culture and modern city scenes.',
+      title: 'CINEMATIC MOTION',
+      category: 'Cinematic Edit',
+      youtubeId: 'g1j1ufqg8ng',
+      description: 'Cinematic color grading, lighting dynamics, and atmospheric pacing designed for visual impact.',
+      url: 'https://www.youtube.com/watch?v=g1j1ufqg8ng',
     },
     {
-      title: 'CINEMATIC PORTRAITS',
-      category: 'Brand Visuals',
-      duration: '02:15',
-      description: 'High-contrast lighting and rich color palettes designed for visual brands.',
+      title: 'COMPETITION ENTRY',
+      category: 'Competition',
+      youtubeId: 'qm2ZoAJPGTg',
+      description: 'Creative visual filmmaking project submitted for national video production competition.',
+      url: 'https://www.youtube.com/watch?v=qm2ZoAJPGTg',
+    },
+    {
+      title: 'BEATS & VISUAL RHYTHM',
+      category: 'Music Video',
+      youtubeId: '82GMXxyepLc',
+      description: 'High-energy music video edit synchronizing visual cuts to musical transitions and artist presence.',
+      url: 'https://www.youtube.com/watch?v=82GMXxyepLc',
     },
   ];
 
@@ -90,19 +101,40 @@ export default function VideographyPage() {
 
       {/* Video Work Gallery */}
       <section className="w-full max-w-7xl mx-auto px-6 md:px-12 pb-28">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {videoWorks.map((work, idx) => (
             <div
               key={idx}
-              className="bg-white/60 backdrop-blur-sm border border-black/5 rounded-[28px] p-6 sm:p-8 flex flex-col justify-between hover:bg-white transition-all duration-300 hover:shadow-xl"
+              className="bg-white/60 backdrop-blur-sm border border-black/5 rounded-[28px] p-6 sm:p-8 flex flex-col justify-between hover:bg-white transition-all duration-300 hover:shadow-xl group"
             >
               <div>
+                {/* YouTube Video Thumbnail */}
+                <div className="relative aspect-video w-full rounded-[20px] overflow-hidden mb-6 bg-neutral-900">
+                  <Image
+                    src={getYouTubeThumbnail(work.youtubeId)}
+                    alt={work.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors" />
+
+                  {/* Play icon overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-12 h-12 rounded-full bg-white/90 text-black flex items-center justify-center shadow-lg backdrop-blur-sm group-hover:scale-110 group-hover:bg-white transition-all">
+                      <Play className="w-5 h-5 fill-current translate-x-0.5" />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between text-xs text-neutral-500 uppercase tracking-widest mb-3">
                   <span className="flex items-center gap-1.5 font-medium">
                     <Film className="w-3.5 h-3.5" />
                     {work.category}
                   </span>
-                  <span>{work.duration}</span>
+                  <span className="font-mono text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    YouTube
+                  </span>
                 </div>
 
                 <h2 className="font-heading font-bold text-2xl uppercase tracking-tight text-neutral-900 mb-3">
@@ -115,10 +147,10 @@ export default function VideographyPage() {
               </div>
 
               <a
-                href="https://www.youtube.com/@GeraldyLouis"
+                href={work.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-black hover:text-neutral-600 transition-colors"
+                className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-black hover:text-neutral-600 transition-colors self-start"
               >
                 <span>Watch on YouTube</span>
                 <Play className="w-3.5 h-3.5 fill-current" />

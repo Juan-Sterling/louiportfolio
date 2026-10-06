@@ -114,9 +114,8 @@ export default function PortfolioGrid() {
         {portfolioItems.map((item, idx) => (
           <div
             key={item.id}
-            className={`portfolio-card break-inside-avoid mb-6 md:mb-8 group relative w-full ${
-              idx % 3 === 0 ? 'aspect-[4/5]' : idx % 3 === 1 ? 'aspect-[16/10]' : 'aspect-[1/1]'
-            } rounded-[28px] sm:rounded-[36px] md:rounded-[44px] overflow-hidden bg-neutral-300 shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition-all duration-500 hover:shadow-[0_24px_60px_rgba(0,0,0,0.18)] isolate`}
+            className={`portfolio-card break-inside-avoid mb-6 md:mb-8 group relative w-full ${idx % 3 === 0 ? 'aspect-[4/5]' : idx % 3 === 1 ? 'aspect-[16/10]' : 'aspect-[1/1]'
+              } rounded-[28px] sm:rounded-[36px] md:rounded-[44px] overflow-hidden bg-neutral-300 shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition-all duration-500 hover:shadow-[0_24px_60px_rgba(0,0,0,0.18)] isolate`}
           >
             {/* Background Image with smooth zoom effect */}
             <div className="absolute inset-0 w-full h-full overflow-hidden">

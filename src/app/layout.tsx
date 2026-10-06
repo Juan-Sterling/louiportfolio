@@ -49,7 +49,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${dmSans.variable} font-sans`}>
-      <body className="min-h-screen bg-[#edeced] text-[#141414] selection:bg-neutral-900 selection:text-[#edeced]">
+      <body className="min-h-screen bg-[#edeced] text-[#141414] selection:bg-neutral-900 selection:text-white">
         <SmoothScroll>{children}</SmoothScroll>
       </body>
     </html>

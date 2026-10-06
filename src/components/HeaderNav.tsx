@@ -32,11 +32,10 @@ export default function HeaderNav() {
     <>
       {/* Floating Dynamic Navbar that smoothly appears when scrolling down */}
       <nav
-        className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
-          scrolled
+        className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 transition-all duration-500 ease-out ${scrolled
             ? 'opacity-100 translate-y-0 pointer-events-auto'
             : 'opacity-0 -translate-y-4 pointer-events-none'
-        }`}
+          }`}
       >
         <div className="flex items-center gap-6 px-6 py-2.5 rounded-full bg-white/75 backdrop-blur-xl border border-black/10 shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
           <a

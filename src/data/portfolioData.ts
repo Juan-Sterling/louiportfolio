@@ -111,6 +111,7 @@ export const CATEGORIES: CategoryGroup[] = [
 
 export interface MediaItem {
   id: string;
+  title?: string;
   category: MainCategory;
   categoryLabel: string;
   subcategory: string;
@@ -118,8 +119,36 @@ export interface MediaItem {
   description?: string;
   type: 'photo' | 'video';
   image: string;
-  aspect: string; // e.g. 'aspect-[4/5]', 'aspect-[16/9]', 'aspect-[1/1]', 'aspect-[3/4]'
+  aspect?: string; // Optional legacy aspect ratio
   videoUrl?: string; // YouTube embed link for playable modal
+  status?: 'draft' | 'published' | 'archived';
+}
+
+/**
+ * Extracts YouTube video ID from various YouTube URL formats
+ * (embeds, watch?v=, youtu.be, shorts)
+ */
+export function getYouTubeVideoId(url?: string): string | null {
+  if (!url) return null;
+  const match = url.match(
+    /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * Returns thumbnail URL from YouTube
+ * Defaults to maxresdefault.jpg (1280x720 HD) with hqdefault.jpg (480x360) option
+ */
+export function getYouTubeThumbnail(
+  urlOrId?: string,
+  quality: 'maxresdefault' | 'hqdefault' = 'maxresdefault'
+): string {
+  if (!urlOrId) return '';
+  const isDirectId = /^[a-zA-Z0-9_-]{11}$/.test(urlOrId);
+  const videoId = isDirectId ? urlOrId : getYouTubeVideoId(urlOrId);
+  if (!videoId) return urlOrId;
+  return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
 }
 
 export const portfolioItems: MediaItem[] = [
@@ -200,7 +229,7 @@ export const portfolioItems: MediaItem[] = [
     subcategoryLabel: 'Music Video',
     description: 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG',
     type: 'video',
-    image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1200&auto=format&fit=crop',
+    image: getYouTubeThumbnail('https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1'),
     aspect: 'aspect-[16/9]',
     videoUrl: 'https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1',
   },
@@ -211,7 +240,7 @@ export const portfolioItems: MediaItem[] = [
     subcategory: 'cinematic-edit',
     subcategoryLabel: 'Cinematic Edit',
     type: 'video',
-    image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1200&auto=format&fit=crop',
+    image: getYouTubeThumbnail('https://www.youtube.com/embed/g1j1ufqg8ng?autoplay=1'),
     aspect: 'aspect-[16/9]',
     videoUrl: 'https://www.youtube.com/embed/g1j1ufqg8ng?autoplay=1',
   },
@@ -223,8 +252,8 @@ export const portfolioItems: MediaItem[] = [
     subcategoryLabel: 'Competition',
     description: 'THESE ARE SOME VIDEOS I’VE SUBMITTED FOR VIDEO COMPETITION',
     type: 'video',
-    image: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=1200&auto=format&fit=crop',
-    aspect: 'aspect-[4/5]',
+    image: getYouTubeThumbnail('https://www.youtube.com/embed/qm2ZoAJPGTg?autoplay=1'),
+    aspect: 'aspect-[16/9]',
     videoUrl: 'https://www.youtube.com/embed/qm2ZoAJPGTg?autoplay=1',
   },
   {
@@ -235,7 +264,7 @@ export const portfolioItems: MediaItem[] = [
     subcategoryLabel: 'Music Video',
     description: 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG',
     type: 'video',
-    image: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=1200&auto=format&fit=crop',
+    image: getYouTubeThumbnail('https://www.youtube.com/embed/82GMXxyepLc?autoplay=1'),
     aspect: 'aspect-[16/9]',
     videoUrl: 'https://www.youtube.com/embed/82GMXxyepLc?autoplay=1',
   },

@@ -217,7 +217,7 @@ export default function ContactSection() {
           </div>
 
           <div className="flex items-center gap-6">
-            <span className="text-neutral-300 font-medium">© 2025 LOUI</span>
+            <span className="text-neutral-300 font-medium">© 2026 LOUI</span>
 
             <button
               onClick={scrollToTop}

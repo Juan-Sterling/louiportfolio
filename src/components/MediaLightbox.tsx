@@ -138,7 +138,13 @@ export default function MediaLightbox({
       >
         {currentItem.type === 'video' ? (
           /* Video Modal Player */
-          <div className="relative w-full aspect-video max-h-[82vh] rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10">
+          <div
+            className={`relative w-full ${
+              currentItem.videoUrl?.includes('/shorts/')
+                ? 'aspect-[9/16] max-w-sm'
+                : 'aspect-video max-w-5xl'
+            } max-h-[82vh] rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10`}
+          >
             <iframe
               src={currentItem.videoUrl || 'https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1'}
               title={currentItem.subcategoryLabel}

@@ -37,7 +37,7 @@ export default function HeroSection() {
 
         {/* Right Column: Copyright */}
         <div className="text-left md:text-right text-xs sm:text-sm md:text-[15px] font-medium tracking-wide text-neutral-900 font-sans order-3">
-          <p>© 2025 LOUI</p>
+          <p>© 2026 LOUI</p>
         </div>
       </div>
     </section>
