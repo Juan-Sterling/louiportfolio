@@ -366,6 +366,47 @@ export default function ModernGallery({
   }, [activeCategory, activeCategoryObj, activeSubcategory, currentSubcategories]);
 
 
+  // Responsive columns count for true row-by-row masonry layout
+  const [columnsCount, setColumnsCount] = useState<number>(3);
+
+  useEffect(() => {
+    const updateColumns = () => {
+      const width = window.innerWidth;
+      if (width < 640) {
+        setColumnsCount(1);
+      } else if (width < 1024) {
+        setColumnsCount(2);
+      } else {
+        setColumnsCount(3);
+      }
+    };
+
+    updateColumns();
+    window.addEventListener('resize', updateColumns);
+    return () => window.removeEventListener('resize', updateColumns);
+  }, []);
+
+  // Distribute items across columns so visual left-to-right reading order matches the array index 100%
+  const columnBuckets = useMemo(() => {
+    const count = Math.max(1, columnsCount);
+    const buckets: { item: MediaItem; originalIndex: number }[][] = Array.from(
+      { length: count },
+      () => []
+    );
+
+    const hasEditorial = activeCategory !== 'all';
+
+    displayedItems.forEach((item, idx) => {
+      // If there's an editorial card at col 0, item 0 starts at col 1 (when count > 1)
+      const targetCol =
+        hasEditorial && count > 1 ? (idx + 1) % count : idx % count;
+
+      buckets[targetCol].push({ item, originalIndex: idx });
+    });
+
+    return buckets;
+  }, [displayedItems, columnsCount, activeCategory]);
+
   const openLightbox = (index: number) => {
     setActiveMediaIndex(index);
     setLightboxOpen(true);
@@ -577,110 +618,114 @@ export default function ModernGallery({
             <>
               <div
                 key={`${activeCategory}-${activeSubcategory}`}
-                className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-7 items-start"
               >
-              {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
-              {activeCategory !== 'all' && (
-                <div
-                  className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
-                  style={{
-                    animationDelay: `${hasMounted ? 35 : 360}ms`,
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
-                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
-                      {activeSubcategory !== 'all'
-                        ? `${activeCategoryObj?.label} - ${activeTitle}`
-                        : `ALL ${activeCategoryObj?.label}`}
-                    </span>
-                  </div>
-
-                  <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
-                    {activeTitle}
-                  </h3>
-
-                  {activeDescription && (
-                    <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
-                      {activeDescription}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {displayedItems.map((item, idx) => {
-                const itemThumbnail =
-                  item.type === 'video' && item.videoUrl
-                    ? getYouTubeThumbnail(item.videoUrl) || item.image
-                    : item.image;
-
-                const baseDelay = hasMounted ? 35 : 380;
-                const stepDelay = hasMounted ? 35 : 55;
-                const cardDelay = Math.min(idx * stepDelay + baseDelay, hasMounted ? 450 : 950);
-                const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
-
-                return (
-                  <div
-                    key={item.id}
-                    className="break-inside-avoid mb-6 md:mb-7 animate-entrance-card"
-                    style={{
-                      animationDelay: `${cardDelay}ms`,
-                    }}
-                  >
-                    <div
-                      onClick={() => openLightbox(fullIndex !== -1 ? fullIndex : idx)}
-                      onMouseEnter={() => {
-                        const currentIdx = fullIndex !== -1 ? fullIndex : idx;
-                        const nextIdx = (currentIdx + 1) % filteredItems.length;
-                        const prevIdx = (currentIdx - 1 + filteredItems.length) % filteredItems.length;
-
-                        [filteredItems[currentIdx], filteredItems[nextIdx], filteredItems[prevIdx]].forEach(
-                          (it) => {
-                            if (it?.image) {
-                              const img = new window.Image();
-                              img.src = it.image;
-                            }
-                          }
-                        );
-                      }}
-                      className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
-                    >
-                      {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}
-                      <div className="relative w-full overflow-hidden">
-                        <Image
-                          src={itemThumbnail}
-                          alt={item.subcategoryLabel}
-                          width={1200}
-                          height={1200}
-                          unoptimized
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                          className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
-                        />
-
-                        {/* Clean Subtle Gradient for Contrast on Tag */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300 pointer-events-none" />
-
-                        {/* Central Video Play Indicator for video items */}
-                        {item.type === 'video' && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                            <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
-                              <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Bottom-Left Tag: Subcategory Only */}
-                        <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
-                          <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm inline-block">
-                            {item.subcategoryLabel}
+                {columnBuckets.map((bucket, colIdx) => (
+                  <div key={colIdx} className="flex flex-col gap-6 md:gap-7">
+                    {/* Unboxed Editorial Statement sitting at the top of Column 0 */}
+                    {colIdx === 0 && activeCategory !== 'all' && (
+                      <div
+                        className="py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                        style={{
+                          animationDelay: `${hasMounted ? 35 : 360}ms`,
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                          <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                            {activeSubcategory !== 'all'
+                              ? `${activeCategoryObj?.label} - ${activeTitle}`
+                              : `ALL ${activeCategoryObj?.label}`}
                           </span>
                         </div>
+
+                        <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+                          {activeTitle}
+                        </h3>
+
+                        {activeDescription && (
+                          <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
+                            {activeDescription}
+                          </p>
+                        )}
                       </div>
-                    </div>
+                    )}
+
+                    {bucket.map(({ item, originalIndex }) => {
+                      const itemThumbnail =
+                        item.type === 'video' && item.videoUrl
+                          ? getYouTubeThumbnail(item.videoUrl) || item.image
+                          : item.image;
+
+                      const baseDelay = hasMounted ? 35 : 380;
+                      const stepDelay = hasMounted ? 35 : 55;
+                      const cardDelay = Math.min(originalIndex * stepDelay + baseDelay, hasMounted ? 450 : 950);
+                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="animate-entrance-card"
+                          style={{
+                            animationDelay: `${cardDelay}ms`,
+                          }}
+                        >
+                          <div
+                            onClick={() => openLightbox(fullIndex !== -1 ? fullIndex : originalIndex)}
+                            onMouseEnter={() => {
+                              const currentIdx = fullIndex !== -1 ? fullIndex : originalIndex;
+                              const nextIdx = (currentIdx + 1) % filteredItems.length;
+                              const prevIdx = (currentIdx - 1 + filteredItems.length) % filteredItems.length;
+
+                              [filteredItems[currentIdx], filteredItems[nextIdx], filteredItems[prevIdx]].forEach(
+                                (it) => {
+                                  if (it?.image) {
+                                    const img = new window.Image();
+                                    img.src = it.image;
+                                  }
+                                }
+                              );
+                            }}
+                            className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
+                          >
+                            {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}
+                            <div className="relative w-full overflow-hidden">
+                              <Image
+                                src={itemThumbnail}
+                                alt={item.subcategoryLabel}
+                                width={1200}
+                                height={1200}
+                                unoptimized
+                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
+                              />
+
+                              {/* Clean Subtle Gradient for Contrast on Tag */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300 pointer-events-none" />
+
+                              {/* Central Video Play Indicator for video items */}
+                              {item.type === 'video' && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
+                                    <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Bottom-Left Tag: Subcategory Only */}
+                              <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
+                                <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm inline-block">
+                                  {item.subcategoryLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
 
             {/* 
               ========================================================================
