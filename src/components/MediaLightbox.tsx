@@ -955,7 +955,7 @@ export default function MediaLightbox({
             key={currentItem.id || currentIndex}
             className={`relative w-full ${
               currentItem.videoUrl?.includes('/shorts/')
-                ? 'aspect-[9/16] max-w-sm sm:max-w-md'
+                ? 'aspect-[4/5] max-w-lg sm:max-w-xl md:max-w-2xl'
                 : 'aspect-video max-w-6xl xl:max-w-7xl 2xl:max-w-[1450px]'
             } max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10`}
           >

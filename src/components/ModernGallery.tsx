@@ -32,41 +32,184 @@ export interface GalleryCategory {
 
 
 /**
- * Cara 2: Interleave media items (photos and videos) so that videos are evenly
- * distributed throughout the list instead of clumping at the bottom or sides.
+ * Fast deterministic pseudo-random generator (Mulberry32)
  */
-function interleaveMediaItems(items: MediaItem[]): MediaItem[] {
-  const videos = items.filter((i) => i.type === 'video');
-  const photos = items.filter((i) => i.type !== 'video');
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-  // If no videos or no photos, keep original order
-  if (videos.length === 0 || photos.length === 0) {
-    return items;
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
   }
+  return hash >>> 0;
+}
 
-  const result: MediaItem[] = [];
+/**
+ * Distributes gallery items across 3 masonry columns so that:
+ * 1. The NEWEST item is ALWAYS placed at the top-left (Bucket 0, index 0).
+ * 2. If multiple new items share the same subcategory, subsequent ones are sent
+ *    to other columns (Bucket 1 or 2) so they don't clump on the left.
+ * 3. Videos and photos are evenly balanced across all 3 columns.
+ * 4. Subcategories are distributed evenly across columns and interleaved within columns.
+ * 5. Uses a deterministic PRNG based on item IDs so results are stable across renders.
+ */
+function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
+  if (!items || items.length <= 1) return items;
+
   const total = items.length;
-  const numVideos = videos.length;
-  const step = total / numVideos;
+  const numCols = 3;
+  const chunkSizes = [
+    Math.ceil(total / numCols),
+    Math.ceil((total - Math.ceil(total / numCols)) / 2),
+    total - Math.ceil(total / numCols) - Math.ceil((total - Math.ceil(total / numCols)) / 2),
+  ];
 
-  let vIdx = 0;
-  let pIdx = 0;
+  const newestItem = items[0];
+  const remaining = items.slice(1);
 
-  for (let i = 0; i < total; i++) {
-    const isVideoSlot =
-      vIdx < numVideos &&
-      (pIdx >= photos.length || i >= Math.round((vIdx + 0.5) * step));
+  // Deterministic PRNG seeded by item IDs for smooth stable rendering
+  const seed = hashString(items.map((i) => i.id).join('-'));
+  const random = mulberry32(seed);
 
-    if (isVideoSlot) {
-      result.push(videos[vIdx++]);
-    } else if (pIdx < photos.length) {
-      result.push(photos[pIdx++]);
-    } else if (vIdx < numVideos) {
-      result.push(videos[vIdx++]);
+  const shuffle = <T,>(arr: T[]): T[] => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const buckets: MediaItem[][] = [[], [], []];
+
+  // Bucket 0 (Left Column) ALWAYS gets the newest item first!
+  buckets[0].push(newestItem);
+
+  const newestSubcat = newestItem.subcategory;
+  const sameSubcatItems: MediaItem[] = [];
+  const otherVideos: MediaItem[] = [];
+  const otherPhotos: MediaItem[] = [];
+
+  for (const item of remaining) {
+    if (newestSubcat && item.subcategory === newestSubcat) {
+      sameSubcatItems.push(item);
+    } else if (item.type === 'video') {
+      otherVideos.push(item);
+    } else {
+      otherPhotos.push(item);
     }
   }
 
-  return result;
+  const shuffledSameSub = shuffle(sameSubcatItems);
+  const shuffledVideos = shuffle(otherVideos);
+  const shuffledPhotos = shuffle(otherPhotos);
+
+  // 1. Same-subcategory items go to Bucket 1 (middle) and Bucket 2 (right) first
+  for (const item of shuffledSameSub) {
+    const targetBucket =
+      buckets[1].length < chunkSizes[1]
+        ? 1
+        : buckets[2].length < chunkSizes[2]
+          ? 2
+          : 0;
+    buckets[targetBucket].push(item);
+  }
+
+  // 2. Distribute videos across columns round-robin so videos don't clump on one side
+  let videoBucketIdx = newestItem.type === 'video' ? 1 : 0;
+  for (const video of shuffledVideos) {
+    let bestBucket = -1;
+    let minVideos = Infinity;
+
+    for (let i = 0; i < numCols; i++) {
+      const bIdx = (videoBucketIdx + i) % numCols;
+      if (buckets[bIdx].length < chunkSizes[bIdx]) {
+        const vCount = buckets[bIdx].filter((x) => x.type === 'video').length;
+        if (vCount < minVideos) {
+          minVideos = vCount;
+          bestBucket = bIdx;
+        }
+      }
+    }
+
+    if (bestBucket !== -1) {
+      buckets[bestBucket].push(video);
+      videoBucketIdx = (bestBucket + 1) % numCols;
+    } else {
+      const shortest = buckets.reduce(
+        (min, b, idx) => (b.length < buckets[min].length ? idx : min),
+        0
+      );
+      buckets[shortest].push(video);
+    }
+  }
+
+  // 3. Distribute other photos to fill remaining space, spreading subcategories
+  const photosBySubcat: Record<string, MediaItem[]> = {};
+  for (const p of shuffledPhotos) {
+    const sub = p.subcategory || 'default';
+    if (!photosBySubcat[sub]) photosBySubcat[sub] = [];
+    photosBySubcat[sub].push(p);
+  }
+
+  const subcatKeys = Object.keys(photosBySubcat);
+  while (Object.values(photosBySubcat).some((arr) => arr.length > 0)) {
+    for (const key of subcatKeys) {
+      const arr = photosBySubcat[key];
+      if (arr && arr.length > 0) {
+        const photo = arr.pop()!;
+        let bestBucket = -1;
+        let minSameSub = Infinity;
+
+        for (let b = 0; b < numCols; b++) {
+          if (buckets[b].length < chunkSizes[b]) {
+            const sameSubCount = buckets[b].filter((x) => x.subcategory === key).length;
+            if (sameSubCount < minSameSub) {
+              minSameSub = sameSubCount;
+              bestBucket = b;
+            }
+          }
+        }
+
+        if (bestBucket === -1) {
+          bestBucket = buckets.reduce(
+            (min, b, idx) => (b.length < buckets[min].length ? idx : min),
+            0
+          );
+        }
+        buckets[bestBucket].push(photo);
+      }
+    }
+  }
+
+  // 4. Inside each bucket, interleave photos and videos
+  for (let b = 0; b < numCols; b++) {
+    const isFirstBucket = b === 0;
+    const bucketItems = isFirstBucket ? buckets[b].slice(1) : buckets[b];
+
+    const vids = bucketItems.filter((x) => x.type === 'video');
+    const phots = bucketItems.filter((x) => x.type !== 'video');
+    const interleaved: MediaItem[] = [];
+
+    let vI = 0;
+    let pI = 0;
+    while (vI < vids.length || pI < phots.length) {
+      if (phots[pI]) interleaved.push(phots[pI++]);
+      if (phots[pI]) interleaved.push(phots[pI++]);
+      if (vids[vI]) interleaved.push(vids[vI++]);
+    }
+
+    buckets[b] = isFirstBucket ? [newestItem, ...interleaved] : interleaved;
+  }
+
+  return buckets.flat();
 }
 
 interface ModernGalleryProps {
@@ -323,12 +466,10 @@ export default function ModernGallery({
       );
     }
 
-    // Cara 2: Smart Interleaving - mix video and photo items evenly across the gallery
-    if (activeCategory === 'all') {
-      result = interleaveMediaItems(result);
-    }
-
-    return result;
+    // Smart Balanced Distribution:
+    // Newest work is always at top-left, while remaining works are pseudo-randomly
+    // distributed across columns so videos, photos, and subcategories never clump!
+    return distributeGalleryItemsBalanced(result);
   }, [items, activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
 
 

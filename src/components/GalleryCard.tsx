@@ -52,6 +52,7 @@ function GalleryCard({
 
   // Video helpers
   const isVideo = item.type === 'video' && Boolean(item.videoUrl);
+  const isShorts = isVideo && item.videoUrl ? item.videoUrl.includes('/shorts/') : false;
   const youtubeId = isVideo && item.videoUrl ? getYouTubeVideoId(item.videoUrl) : null;
   const isYouTube = Boolean(youtubeId);
 
@@ -140,7 +141,7 @@ function GalleryCard({
         className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate select-none transform-gpu"
       >
         {/* Media Container */}
-        <div className="relative w-full overflow-hidden">
+        <div className={`relative w-full overflow-hidden ${isShorts ? 'aspect-[4/5]' : ''}`}>
           {/* Base Thumbnail Image (Always stays rendered for zero layout shift) */}
           <Image
             src={itemThumbnail}
@@ -150,7 +151,9 @@ function GalleryCard({
             priority={idx < 4}
             unoptimized
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
+            className={`w-full ${
+              isShorts ? 'h-full' : 'h-auto'
+            } block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105`}
           />
 
           {/* Ambient Gradient for Legibility (fades out during video preview) */}
