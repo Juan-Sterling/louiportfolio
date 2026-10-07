@@ -277,6 +277,40 @@ export default function ModernGallery({
     return result;
   }, [items, activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
 
+  // Proactive background preloader for instant lightbox viewing
+  useEffect(() => {
+    if (typeof window === 'undefined' || filteredItems.length === 0) return;
+
+    const preloadGalleryImages = () => {
+      // Preload first 24 gallery items so they are already cached and GPU-decoded in browser memory
+      filteredItems.slice(0, 24).forEach((item) => {
+        const src =
+          item.type === 'video' && item.videoUrl
+            ? getYouTubeThumbnail(item.videoUrl)
+            : item.image;
+        if (src) {
+          const img = new window.Image();
+          img.src = src;
+          if ('decode' in img) {
+            img.decode().catch(() => {});
+          }
+        }
+      });
+    };
+
+    if ('requestIdleCallback' in window) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handle = (window as any).requestIdleCallback(preloadGalleryImages, {
+        timeout: 2000,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return () => (window as any).cancelIdleCallback(handle);
+    } else {
+      const timer = setTimeout(preloadGalleryImages, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [filteredItems]);
+
   // Fitur Load More / Show Less disimpan (di-keep), saat ini dinonaktifkan sementara menunggu persetujuan client
   // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
   const ENABLE_LOAD_MORE = false;
@@ -595,6 +629,20 @@ export default function ModernGallery({
                   >
                     <div
                       onClick={() => openLightbox(fullIndex !== -1 ? fullIndex : idx)}
+                      onMouseEnter={() => {
+                        const currentIdx = fullIndex !== -1 ? fullIndex : idx;
+                        const nextIdx = (currentIdx + 1) % filteredItems.length;
+                        const prevIdx = (currentIdx - 1 + filteredItems.length) % filteredItems.length;
+
+                        [filteredItems[currentIdx], filteredItems[nextIdx], filteredItems[prevIdx]].forEach(
+                          (it) => {
+                            if (it?.image) {
+                              const img = new window.Image();
+                              img.src = it.image;
+                            }
+                          }
+                        );
+                      }}
                       className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
                     >
                       {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}

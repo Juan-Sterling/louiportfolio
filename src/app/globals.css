@@ -186,6 +186,15 @@ html.lenis body {
   animation: entranceSimpleFade 0.4s ease-out both;
 }
 
+/* Utility to hide scrollbars on horizontal thumbnail strip */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-entrance-hero-left,
   .animate-entrance-hero-center,
