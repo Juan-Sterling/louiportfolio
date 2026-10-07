@@ -26,6 +26,9 @@ interface MediaLightboxProps {
   onNavigate: (index: number) => void;
 }
 
+// Flag to prevent programmatic history.back() from closing subsequent modal sessions
+let isProgrammaticBackActive = false;
+
 export default function MediaLightbox({
   items,
   currentIndex,
@@ -666,6 +669,53 @@ export default function MediaLightbox({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, handlePrev, handleNext, handleZoomIn, handleZoomOut, resetZoom, onClose]);
+
+  // Keep stable ref for onClose callback
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Intercept mobile hardware/gesture & browser back button to close modal instead of exiting website
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let isClosedByPopState = false;
+
+    // Push state into browser history so mobile back button pops this entry first
+    const currentHistoryState = window.history.state || {};
+    window.history.pushState(
+      { ...currentHistoryState, __lightboxModal: true },
+      ''
+    );
+
+    const handlePopState = () => {
+      if (isProgrammaticBackActive) {
+        isProgrammaticBackActive = false;
+        return;
+      }
+      isClosedByPopState = true;
+      onCloseRef.current();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+
+      // If user closed modal via UI (X button, backdrop click, Escape key) rather than phone back button,
+      // revert the history entry we pushed so browser history remains completely clean.
+      if (!isClosedByPopState) {
+        if (window.history.state?.__lightboxModal) {
+          isProgrammaticBackActive = true;
+          window.history.back();
+          setTimeout(() => {
+            isProgrammaticBackActive = false;
+          }, 150);
+        }
+      }
+    };
+  }, [isOpen]);
 
   if (!isOpen || !currentItem) return null;
 
