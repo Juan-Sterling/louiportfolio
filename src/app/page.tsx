@@ -4,8 +4,8 @@ import ModernGallery from "@/components/ModernGallery";
 import ContactSection from "@/components/ContactSection";
 import { getGalleryData } from "@/lib/galleryData";
 
-// Always render fresh data from database on reload
-export const dynamic = 'force-dynamic';
+// Enable Incremental Static Regeneration (ISR) - cached on Edge CDN, regenerated in background every 60s
+export const revalidate = 60;
 
 export default async function Home() {
   const { categories, items } = await getGalleryData();
