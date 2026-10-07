@@ -44,6 +44,13 @@ export default function MediaLightbox({
   // Bottom thumbnail strip visibility toggle
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
 
+  // Overall overlay controls visibility (toggled on single click/tap on screen)
+  const [showOverlayControls, setShowOverlayControls] = useState<boolean>(true);
+
+  // Single-click timer ref to cleanly separate single-click (toggle UI) from double-click (zoom)
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTouchToggleTimeRef = useRef<number>(0);
+
   // Zoom & Pan states
   const [scale, setScale] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -100,6 +107,11 @@ export default function MediaLightbox({
     if (!isOpen) {
       setActiveLoadedSrc('');
       prevItemRef.current = null;
+      setShowOverlayControls(true);
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
     } else if (currentItem && currentItem.type !== 'video' && !activeLoadedSrc) {
       setActiveLoadedSrc(currentItem.image);
       prevItemRef.current = currentItem;
@@ -290,9 +302,44 @@ export default function MediaLightbox({
     });
   }, [currentItem]);
 
+  // Single-click / tap on media to toggle filmstrip & navigation arrows
+  const handleMediaClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // Prevent mobile touch ghost-click from toggling twice within 450ms
+    if (Date.now() - lastTouchToggleTimeRef.current < 450) {
+      return;
+    }
+
+    // Never toggle if user was dragging or panning
+    if (hasDraggedRef.current || isDraggingRef.current) {
+      return;
+    }
+
+    if (currentItem?.type === 'video') {
+      setShowOverlayControls((prev) => !prev);
+      return;
+    }
+
+    // Debounce single-click slightly so double-click zoom doesn't trigger UI toggle
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    } else {
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null;
+        setShowOverlayControls((prev) => !prev);
+      }, 230);
+    }
+  };
+
   // Double click toggles between 1x and 2.2x zoom
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
     if (currentItem?.type === 'video') return;
 
     if (scale > 1) {
@@ -464,10 +511,8 @@ export default function MediaLightbox({
     }
   };
 
-  // Touch handlers for mobile (Single-finger pan when zoomed, Pinch-to-zoom, Swipe when 1x)
+  // Touch handlers for mobile (Single-finger pan when zoomed, Pinch-to-zoom, Swipe when 1x, Single-tap toggle)
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (currentItem?.type === 'video') return;
-
     if (e.touches.length === 1) {
       touchStartPos.current = {
         x: e.touches[0].clientX,
@@ -475,7 +520,7 @@ export default function MediaLightbox({
         time: Date.now(),
       };
 
-      if (scale > 1) {
+      if (currentItem?.type !== 'video' && scale > 1) {
         setIsDragging(true);
         isDraggingRef.current = true;
         dragStartRef.current = {
@@ -483,7 +528,7 @@ export default function MediaLightbox({
           y: e.touches[0].clientY - panRef.current.y,
         };
       }
-    } else if (e.touches.length === 2) {
+    } else if (e.touches.length === 2 && currentItem?.type !== 'video') {
       // 2 fingers: Start pinch-to-zoom
       setIsDragging(true);
       isDraggingRef.current = true;
@@ -559,8 +604,8 @@ export default function MediaLightbox({
       return;
     }
 
-    // Swipe navigation detection when scale === 1
-    if (e.changedTouches.length === 1 && currentItem?.type !== 'video') {
+    // Touch gesture detection (Swipe navigation & Single-tap toggle)
+    if (e.changedTouches.length === 1) {
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
       const deltaX = touchEndX - touchStartPos.current.x;
@@ -568,6 +613,7 @@ export default function MediaLightbox({
       const elapsedTime = Date.now() - touchStartPos.current.time;
 
       if (
+        currentItem?.type !== 'video' &&
         Math.abs(deltaX) > 45 &&
         Math.abs(deltaX) > Math.abs(deltaY) * 1.5 &&
         elapsedTime < 450
@@ -577,9 +623,29 @@ export default function MediaLightbox({
         } else {
           handlePrev();
         }
+      } else if (
+        Math.abs(deltaX) < 14 &&
+        Math.abs(deltaY) < 14 &&
+        elapsedTime < 350
+      ) {
+        // Single tap on mobile screen to toggle filmstrip & nav buttons!
+        lastTouchToggleTimeRef.current = Date.now();
+        setShowOverlayControls((prev) => !prev);
       }
     }
   };
+
+  // Body scroll lock (only toggles once when modal opens/closes)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen]);
 
   // Keyboard navigation and shortcuts
   useEffect(() => {
@@ -595,11 +661,9 @@ export default function MediaLightbox({
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'unset';
     };
   }, [isOpen, handlePrev, handleNext, handleZoomIn, handleZoomOut, resetZoom, onClose]);
 
@@ -607,7 +671,8 @@ export default function MediaLightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-2xl transition-all duration-300 select-none animate-fadeIn p-1 sm:p-2 md:p-3 overflow-hidden"
+      data-lenis-prevent
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 select-none animate-fadeIn p-1 sm:p-2 md:p-3 overflow-hidden"
       onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
     >
@@ -644,13 +709,16 @@ export default function MediaLightbox({
           {/* Toggle Filmstrip Strip Button */}
           {items.length > 1 && (
             <button
-              onClick={() => setShowThumbnails((prev) => !prev)}
+              onClick={() => {
+                setShowThumbnails((prev) => !prev);
+                setShowOverlayControls(true);
+              }}
               className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center border transition-all ${
-                showThumbnails
+                showThumbnails && showOverlayControls
                   ? 'bg-white/20 border-white/30 text-white'
                   : 'bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10'
               }`}
-              title={showThumbnails ? 'Hide Filmstrip' : 'Show Filmstrip'}
+              title={showThumbnails && showOverlayControls ? 'Hide Filmstrip' : 'Show Filmstrip'}
               aria-label="Toggle Filmstrip"
             >
               <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -710,7 +778,11 @@ export default function MediaLightbox({
             e.stopPropagation();
             handlePrev();
           }}
-          className="absolute left-1.5 sm:left-3 md:left-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg"
+          className={`absolute left-1.5 sm:left-3 md:left-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
+            showOverlayControls
+              ? 'opacity-100 translate-x-0 pointer-events-auto'
+              : 'opacity-0 -translate-x-6 pointer-events-none'
+          }`}
           aria-label="Previous Photo (Arrow Left)"
           title="Previous (←)"
         >
@@ -725,7 +797,11 @@ export default function MediaLightbox({
             e.stopPropagation();
             handleNext();
           }}
-          className="absolute right-1.5 sm:right-3 md:right-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg"
+          className={`absolute right-1.5 sm:right-3 md:right-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
+            showOverlayControls
+              ? 'opacity-100 translate-x-0 pointer-events-auto'
+              : 'opacity-0 translate-x-6 pointer-events-none'
+          }`}
           aria-label="Next Photo (Arrow Right)"
           title="Next (→)"
         >
@@ -736,11 +812,11 @@ export default function MediaLightbox({
       {/* Central Media Stage */}
       <div
         className={`relative w-full max-w-[96vw] xl:max-w-[94vw] 2xl:max-w-[1650px] flex items-center justify-center my-auto transition-all duration-300 ${
-          showThumbnails && items.length > 1
+          showOverlayControls && showThumbnails && items.length > 1
             ? 'h-[calc(100vh-130px)] sm:h-[calc(100vh-140px)] min-h-[300px] pt-10 sm:pt-12 pb-1'
             : 'h-[calc(100vh-75px)] sm:h-[calc(100vh-85px)] min-h-[320px] pt-8 sm:pt-10 pb-1'
         }`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={handleMediaClick}
         onMouseDown={(e) => {
           e.stopPropagation();
           backdropMouseDownRef.current = false;
@@ -776,9 +852,9 @@ export default function MediaLightbox({
                 ? isDragging
                   ? 'cursor-grabbing'
                   : 'cursor-grab'
-                : 'cursor-zoom-in'
+                : 'cursor-pointer'
             }`}
-            onClick={(e) => e.stopPropagation()}
+            onClick={handleMediaClick}
             onMouseDown={handleMouseDown}
             onDoubleClick={handleDoubleClick}
             onTouchStart={handleTouchStart}
@@ -787,7 +863,7 @@ export default function MediaLightbox({
             title={
               scale > 1
                 ? 'Drag to pan • Double-click or scroll wheel to reset'
-                : 'Double-click or scroll wheel to zoom'
+                : 'Click to toggle controls • Double-click to zoom'
             }
           >
             {/* Dedicated Interactive Zoom & Pan stage (never unmounted to prevent visual flicker) */}
@@ -842,9 +918,13 @@ export default function MediaLightbox({
       </div>
 
       {/* Bottom Thumbnail Filmstrip: Fully Scrollable & Interactive */}
-      {showThumbnails && items.length > 1 && (
+      {items.length > 1 && (
         <div
-          className="absolute bottom-2 sm:bottom-3 left-0 right-0 z-40 flex justify-center px-2 sm:px-4 pointer-events-auto animate-fadeIn"
+          className={`absolute bottom-2 sm:bottom-3 left-0 right-0 z-40 flex justify-center px-2 sm:px-4 pointer-events-auto transition-all duration-300 ${
+            showOverlayControls && showThumbnails
+              ? 'opacity-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 translate-y-8 pointer-events-none'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-2xl bg-black/75 backdrop-blur-xl border border-white/15 max-w-[96vw] sm:max-w-2xl md:max-w-3xl shadow-2xl">

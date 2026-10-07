@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import {
   Play,
@@ -346,10 +346,18 @@ export default function ModernGallery({
   }, [activeCategory, activeCategoryObj, activeSubcategory, currentSubcategories]);
 
 
-  const openLightbox = (index: number) => {
+  const openLightbox = useCallback((index: number) => {
     setActiveMediaIndex(index);
     setLightboxOpen(true);
-  };
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+  }, []);
+
+  const navigateLightbox = useCallback((idx: number) => {
+    setActiveMediaIndex(idx);
+  }, []);
 
   return (
     <section id="work" className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-28 md:pb-36">
@@ -592,8 +600,6 @@ export default function ModernGallery({
                       fullIndex={fullIndex}
                       hasMounted={hasMounted}
                       isInitialEntrance={isInitialEntrance}
-                      filteredItems={filteredItems}
-                      isLightboxOpen={lightboxOpen}
                       onOpenLightbox={openLightbox}
                     />
                   );
@@ -681,8 +687,8 @@ export default function ModernGallery({
         items={filteredItems}
         currentIndex={activeMediaIndex}
         isOpen={lightboxOpen}
-        onClose={() => setLightboxOpen(false)}
-        onNavigate={(idx) => setActiveMediaIndex(idx)}
+        onClose={closeLightbox}
+        onNavigate={navigateLightbox}
       />
     </section>
   );

@@ -15,19 +15,15 @@ interface GalleryCardProps {
   fullIndex: number;
   hasMounted: boolean;
   isInitialEntrance?: boolean;
-  filteredItems: MediaItem[];
-  isLightboxOpen?: boolean;
   onOpenLightbox: (index: number) => void;
 }
 
-export default function GalleryCard({
+function GalleryCard({
   item,
   idx,
   fullIndex,
   hasMounted,
   isInitialEntrance = true,
-  filteredItems,
-  isLightboxOpen = false,
   onOpenLightbox,
 }: GalleryCardProps) {
   // Video preview states
@@ -89,8 +85,7 @@ export default function GalleryCard({
 
   // Mouse enter: trigger debounced 10s video preview
   const handleMouseEnter = () => {
-    // If item is a video and lightbox is closed, trigger 10-second hover preview
-    if (isVideo && !isLightboxOpen) {
+    if (isVideo) {
       clearTimers();
       setHasCompletedPreview(false);
 
@@ -115,21 +110,21 @@ export default function GalleryCard({
     setHasCompletedPreview(false);
   };
 
-  // When lightbox opens or component unmounts, cancel active preview immediately
-  useEffect(() => {
-    if (isLightboxOpen) {
-      clearTimers();
-      setIsPreviewActive(false);
-      setIsMediaReady(false);
-      setHasCompletedPreview(false);
-    }
-  }, [isLightboxOpen, clearTimers]);
-
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       clearTimers();
     };
   }, [clearTimers]);
+
+  // Click card to open lightbox
+  const handleClick = () => {
+    clearTimers();
+    setIsPreviewActive(false);
+    setIsMediaReady(false);
+    setHasCompletedPreview(false);
+    onOpenLightbox(fullIndex !== -1 ? fullIndex : idx);
+  };
 
   return (
     <div
@@ -139,7 +134,7 @@ export default function GalleryCard({
       }}
     >
       <div
-        onClick={() => onOpenLightbox(fullIndex !== -1 ? fullIndex : idx)}
+        onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate select-none transform-gpu"
@@ -254,3 +249,5 @@ export default function GalleryCard({
     </div>
   );
 }
+
+export default React.memo(GalleryCard);
