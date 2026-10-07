@@ -267,24 +267,20 @@ export default function AdminPage() {
     loadDatabaseData();
   }, []);
 
-  // Clean up uncommitted Cloudinary uploads on page unload, back navigation, or Escape key
+  // Clean up uncommitted Cloudinary uploads on page unload or back navigation
   useEffect(() => {
-    const cleanupUnsavedSessionUploads = () => {
+    const handleUnload = () => {
       if (sessionUploadedImagesRef.current.length > 0) {
         for (const tempUrl of sessionUploadedImagesRef.current) {
           if (tempUrl.includes('res.cloudinary.com')) {
             const publicId = extractCloudinaryPublicId(tempUrl);
-            if (publicId) {
-              if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-                navigator.sendBeacon(
-                  '/api/media/delete',
-                  new Blob([JSON.stringify({ publicId, resourceType: 'image' })], {
-                    type: 'application/json',
-                  })
-                );
-              } else {
-                deleteCloudinaryMedia(tempUrl);
-              }
+            if (publicId && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+              navigator.sendBeacon(
+                '/api/media/delete',
+                new Blob([JSON.stringify({ publicId, resourceType: 'image' })], {
+                  type: 'application/json',
+                })
+              );
             }
           }
         }
@@ -292,21 +288,28 @@ export default function AdminPage() {
       }
     };
 
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    window.addEventListener('popstate', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('popstate', handleUnload);
+    };
+  }, []);
+
+  // Handle Escape key to close modal safely
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isContentModalOpen && !uploadingMedia) {
         handleCloseContentModal();
       }
     };
 
-    window.addEventListener('beforeunload', cleanupUnsavedSessionUploads);
-    window.addEventListener('popstate', cleanupUnsavedSessionUploads);
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
-      window.removeEventListener('beforeunload', cleanupUnsavedSessionUploads);
-      window.removeEventListener('popstate', cleanupUnsavedSessionUploads);
       window.removeEventListener('keydown', handleKeyDown);
-      cleanupUnsavedSessionUploads();
     };
   }, [isContentModalOpen, uploadingMedia]);
 
