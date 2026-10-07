@@ -347,8 +347,15 @@ export default function MediaLightbox({
     });
   }, [currentItem]);
 
-  // Toggle overlay controls (filmstrip & navigation arrows)
+  const lastToggleTimestampRef = useRef<number>(0);
+
+  // Toggle overlay controls (filmstrip & navigation arrows) with strict 350ms throttle
   const toggleOverlayControls = useCallback(() => {
+    const now = Date.now();
+    if (now - lastToggleTimestampRef.current < 350) {
+      return;
+    }
+    lastToggleTimestampRef.current = now;
     setShowOverlayControls((prev) => !prev);
   }, []);
 
@@ -563,6 +570,8 @@ export default function MediaLightbox({
 
   // Touch handlers for mobile (Single-finger pan when zoomed, Pinch-to-zoom, Swipe when 1x, Single-tap toggle)
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+
     if (e.touches.length === 1) {
       touchStartPos.current = {
         x: e.touches[0].clientX,
@@ -641,6 +650,8 @@ export default function MediaLightbox({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
+
     if (pinchStartDistRef.current) {
       pinchStartDistRef.current = null;
       setIsDragging(false);
