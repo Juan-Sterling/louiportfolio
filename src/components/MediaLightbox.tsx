@@ -965,7 +965,7 @@ export default function MediaLightbox({
                 getYouTubeEmbedUrl(currentItem.videoUrl) ||
                 'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
               }
-              title={currentItem.subcategoryLabel || currentItem.title || 'YouTube Video Player'}
+              title={currentItem.subcategoryLabel || 'YouTube Video Player'}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               className="w-full h-full object-cover"

@@ -79,6 +79,7 @@ export default function ModernGallery({
   initialItems,
 }: ModernGalleryProps = {}) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isArrangingLayout, setIsArrangingLayout] = useState<boolean>(true);
   const [hasMounted, setHasMounted] = useState<boolean>(false);
   const [isInitialEntrance, setIsInitialEntrance] = useState<boolean>(true);
   const [items, setItems] = useState<MediaItem[]>(
@@ -119,16 +120,58 @@ export default function ModernGallery({
     }
   }, [initialCategories]);
 
-  // Fetch live portfolio data from Database if not provided by server
+  // Preload top visible thumbnails and arrange layout stably before revealing
   useEffect(() => {
     setHasMounted(true);
+
+    if (items.length === 0) {
+      setIsArrangingLayout(false);
+      return;
+    }
+
+    // Preload top visible thumbnails so the browser decodes dimensions before reveal
+    const topThumbnails = items.slice(0, 9).map((i) => i.image).filter(Boolean);
+    let loadedCount = 0;
+    const totalToPreload = topThumbnails.length;
+
+    const finishLoading = () => {
+      // Small buffer (180ms) for DOM layout to balance peacefully in background
+      setTimeout(() => {
+        setIsArrangingLayout(false);
+      }, 180);
+    };
+
+    if (totalToPreload === 0) {
+      finishLoading();
+      return;
+    }
+
+    // Safety timeout: maximum 900ms loading state so visitor never waits too long
+    const safetyTimer = setTimeout(() => {
+      setIsArrangingLayout(false);
+    }, 900);
+
+    topThumbnails.forEach((src) => {
+      const img = new window.Image();
+      img.src = src;
+      img.onload = img.onerror = () => {
+        loadedCount++;
+        if (loadedCount >= totalToPreload) {
+          clearTimeout(safetyTimer);
+          finishLoading();
+        }
+      };
+    });
 
     const timer = setTimeout(() => {
       setIsInitialEntrance(false);
     }, 2400);
 
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      clearTimeout(safetyTimer);
+      clearTimeout(timer);
+    };
+  }, [items]);
 
   useEffect(() => {
     if (initialItems && initialItems.length > 0) {
@@ -161,7 +204,6 @@ export default function ModernGallery({
           .from('contents')
           .select(`
             id,
-            title,
             description,
             subcategory_id,
             image_url,
@@ -211,7 +253,7 @@ export default function ModernGallery({
               category: (d.subcategories?.categories?.id || 'photography') as any,
               categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
               subcategory: d.subcategories?.id || d.subcategory_id,
-              subcategoryLabel: d.subcategories?.label || d.title,
+              subcategoryLabel: d.subcategories?.label || 'Portfolio',
               description: d.description || '',
               type: (d.type || 'photo') as 'photo' | 'video',
               image: d.image_url,
@@ -484,25 +526,45 @@ export default function ModernGallery({
       </div>
 
       {/* ==================================================== */}
-      {/* LOADING STATE SKELETON */}
+      {/* LOADING STATE (MINIMAL LUXURY ANIMATION)            */}
       {/* ==================================================== */}
-      {isLoading ? (
+      {isLoading || isArrangingLayout ? (
         <div className="space-y-8 animate-fadeIn">
-          {/* Subtle Loading Notification Badge */}
-          <div className="flex items-center justify-center py-2">
-            <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/70 backdrop-blur-md border border-black/5 shadow-sm">
-              <span className="w-2 h-2 rounded-full bg-neutral-900 animate-ping" />
-              <span className="text-xs font-mono uppercase tracking-widest text-neutral-700 font-medium">
-                Loading Portfolio Works...
+          {/* Central Luxury Animated Brand Loader */}
+          <div className="py-6 sm:py-8 flex flex-col items-center justify-center gap-3">
+            <div className="relative w-12 h-12 flex items-center justify-center">
+              {/* Outer circular track */}
+              <div className="absolute inset-0 rounded-full border-2 border-black/10" />
+              {/* Spinning gradient arc */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-neutral-900 border-r-neutral-900/40 animate-spin" />
+              {/* Brand Lettermark */}
+              <span className="font-heading font-black text-sm text-neutral-900 select-none">
+                L
               </span>
+            </div>
+
+            {/* Subtle Bouncing Wave Dots */}
+            <div className="flex items-center gap-1.5 pt-1">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-neutral-900/60 animate-bounce"
+                style={{ animationDelay: '0ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-neutral-900/60 animate-bounce"
+                style={{ animationDelay: '150ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-neutral-900/60 animate-bounce"
+                style={{ animationDelay: '300ms' }}
+              />
             </div>
           </div>
 
-          {/* Masonry Columns Skeleton */}
+          {/* Clean Shimmering Masonry Skeleton */}
           <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]">
             {[
-              'aspect-[16/9]',
               'aspect-[4/5]',
+              'aspect-[16/9]',
               'aspect-[1/1]',
               'aspect-[3/4]',
               'aspect-[16/9]',
@@ -510,13 +572,11 @@ export default function ModernGallery({
             ].map((aspectRatio, idx) => (
               <div
                 key={idx}
-                className="break-inside-avoid mb-6 md:mb-7 overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-300/40 relative shadow-sm"
+                className="break-inside-avoid mb-6 md:mb-7 overflow-hidden rounded-[24px] md:rounded-[30px] bg-black/[0.04] relative shadow-sm"
               >
                 <div
-                  className={`relative w-full ${aspectRatio} bg-gradient-to-r from-neutral-300/40 via-neutral-200/70 to-neutral-300/40 animate-pulse flex flex-col justify-end p-5`}
-                >
-                  <div className="h-6 w-1/2 rounded-full bg-neutral-400/25 mb-2" />
-                </div>
+                  className={`w-full ${aspectRatio} bg-gradient-to-tr from-black/[0.03] via-black/[0.07] to-black/[0.03] animate-pulse`}
+                />
               </div>
             ))}
           </div>
@@ -525,7 +585,7 @@ export default function ModernGallery({
         /* ==================================================== */
         /* GALLERY GRID LAYOUT */
         /* ==================================================== */
-        <div>
+        <div className="animate-fadeIn">
           {filteredItems.length === 0 ? (
             <div className="py-16 text-center">
               {activeCategory !== 'all' && (

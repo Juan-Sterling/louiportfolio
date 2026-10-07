@@ -41,7 +41,6 @@ export interface DBSubcategory {
 export interface DBContent {
   id: string;
   subcategory_id: string;
-  title: string;
   description?: string;
   type: 'photo' | 'video';
   image_url: string;

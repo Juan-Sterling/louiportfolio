@@ -26,7 +26,6 @@
 html {
   background-color: var(--color-canvas);
   color: var(--color-ink);
-  scroll-behavior: smooth;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   scrollbar-gutter: stable;

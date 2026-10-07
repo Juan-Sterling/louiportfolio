@@ -144,9 +144,10 @@ function GalleryCard({
           {/* Base Thumbnail Image (Always stays rendered for zero layout shift) */}
           <Image
             src={itemThumbnail}
-            alt={item.subcategoryLabel || item.title || 'Portfolio Work'}
+            alt={item.subcategoryLabel || 'Portfolio Work'}
             width={1200}
             height={1200}
+            priority={idx < 4}
             unoptimized
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"

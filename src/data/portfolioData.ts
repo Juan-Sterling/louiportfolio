@@ -111,7 +111,6 @@ export const CATEGORIES: CategoryGroup[] = [
 
 export interface MediaItem {
   id: string;
-  title?: string;
   category: MainCategory;
   categoryLabel: string;
   subcategory: string;

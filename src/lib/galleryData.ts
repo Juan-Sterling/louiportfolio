@@ -58,7 +58,6 @@ export async function getGalleryData(): Promise<{
       .from('contents')
       .select(`
         id,
-        title,
         description,
         subcategory_id,
         image_url,
@@ -116,11 +115,10 @@ export async function getGalleryData(): Promise<{
         );
         return {
           id: d.id,
-          title: d.title || undefined,
           category: (d.subcategories?.categories?.id || 'photography') as any,
           categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
           subcategory: d.subcategories?.id || d.subcategory_id,
-          subcategoryLabel: d.subcategories?.label || d.title,
+          subcategoryLabel: d.subcategories?.label || 'Portfolio',
           description: d.description || '',
           type: (d.type || 'photo') as 'photo' | 'video',
           image: d.image_url,

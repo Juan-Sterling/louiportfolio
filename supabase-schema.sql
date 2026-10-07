@@ -77,7 +77,6 @@ CREATE TRIGGER set_subcategories_updated_at
 CREATE TABLE contents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     subcategory_id UUID NOT NULL REFERENCES subcategories(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,                  -- Judul project / item
     description TEXT,                     -- Deskripsi singkat project
     type TEXT NOT NULL DEFAULT 'photo' CHECK (type IN ('photo', 'video')),
     image_url TEXT NOT NULL,              -- URL Cloudinary atau thumbnail YouTube
@@ -175,18 +174,18 @@ SELECT id, 'custom-order', 'Custom Order', 'YOU CAN ALSO GET YOUR OWN GRAPHIC TE
 
 -- C. Initial Contents (Foto & Video Portofolio)
 -- Video Items (YouTube Thumbnails Resmi)
-INSERT INTO contents (subcategory_id, title, description, type, image_url, video_url, status)
-SELECT id, 'Music Video Edit', 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG', 'video', 'https://img.youtube.com/vi/XyLoPRmUR3s/maxresdefault.jpg', 'https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1', 'published'
+INSERT INTO contents (subcategory_id, description, type, image_url, video_url, status)
+SELECT id, 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG', 'video', 'https://img.youtube.com/vi/XyLoPRmUR3s/maxresdefault.jpg', 'https://www.youtube.com/embed/XyLoPRmUR3s?autoplay=1', 'published'
 FROM subcategories WHERE key = 'music-video' LIMIT 1;
 
-INSERT INTO contents (subcategory_id, title, description, type, image_url, video_url, status)
-SELECT id, 'Cinematic Motion', 'CINEMATIC MOTION & COLOR', 'video', 'https://img.youtube.com/vi/g1j1ufqg8ng/maxresdefault.jpg', 'https://www.youtube.com/embed/g1j1ufqg8ng?autoplay=1', 'published'
+INSERT INTO contents (subcategory_id, description, type, image_url, video_url, status)
+SELECT id, 'CINEMATIC MOTION & COLOR', 'video', 'https://img.youtube.com/vi/g1j1ufqg8ng/maxresdefault.jpg', 'https://www.youtube.com/embed/g1j1ufqg8ng?autoplay=1', 'published'
 FROM subcategories WHERE key = 'cinematic-edit' LIMIT 1;
 
-INSERT INTO contents (subcategory_id, title, description, type, image_url, video_url, status)
-SELECT id, 'Short Film Competition', 'THESE ARE SOME VIDEOS I’VE SUBMITTED FOR VIDEO COMPETITION', 'video', 'https://img.youtube.com/vi/qm2ZoAJPGTg/maxresdefault.jpg', 'https://www.youtube.com/embed/qm2ZoAJPGTg?autoplay=1', 'published'
+INSERT INTO contents (subcategory_id, description, type, image_url, video_url, status)
+SELECT id, 'THESE ARE SOME VIDEOS I’VE SUBMITTED FOR VIDEO COMPETITION', 'video', 'https://img.youtube.com/vi/qm2ZoAJPGTg/maxresdefault.jpg', 'https://www.youtube.com/embed/qm2ZoAJPGTg?autoplay=1', 'published'
 FROM subcategories WHERE key = 'competition' LIMIT 1;
 
-INSERT INTO contents (subcategory_id, title, description, type, image_url, video_url, status)
-SELECT id, 'Beats & Visual Rhythm', 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG', 'video', 'https://img.youtube.com/vi/82GMXxyepLc/maxresdefault.jpg', 'https://www.youtube.com/embed/82GMXxyepLc?autoplay=1', 'published'
+INSERT INTO contents (subcategory_id, description, type, image_url, video_url, status)
+SELECT id, 'I’VE EDITED SOME MUSIC VIDEOS, BOTH OFFICIAL SONG AND COVER SONG', 'video', 'https://img.youtube.com/vi/82GMXxyepLc/maxresdefault.jpg', 'https://www.youtube.com/embed/82GMXxyepLc?autoplay=1', 'published'
 FROM subcategories WHERE key = 'music-video' LIMIT 1;
