@@ -17,6 +17,7 @@ import {
 } from '@/data/portfolioData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import MediaLightbox from './MediaLightbox';
+import GalleryCard from './GalleryCard';
 
 export interface GalleryCategory {
   id: string;
@@ -602,75 +603,19 @@ export default function ModernGallery({
                 )}
 
                 {displayedItems.map((item, idx) => {
-                  const itemThumbnail =
-                    item.type === 'video' && item.videoUrl
-                      ? getYouTubeThumbnail(item.videoUrl) || item.image
-                      : item.image;
-
-                  const baseDelay = hasMounted ? 35 : 380;
-                  const stepDelay = hasMounted ? 35 : 55;
-                  const cardDelay = Math.min(idx * stepDelay + baseDelay, hasMounted ? 450 : 950);
                   const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
 
                   return (
-                    <div
+                    <GalleryCard
                       key={item.id}
-                      className="break-inside-avoid mb-6 md:mb-7 animate-entrance-card"
-                      style={{
-                        animationDelay: `${cardDelay}ms`,
-                      }}
-                    >
-                      <div
-                        onClick={() => openLightbox(fullIndex !== -1 ? fullIndex : idx)}
-                        onMouseEnter={() => {
-                          const currentIdx = fullIndex !== -1 ? fullIndex : idx;
-                          const nextIdx = (currentIdx + 1) % filteredItems.length;
-                          const prevIdx = (currentIdx - 1 + filteredItems.length) % filteredItems.length;
-
-                          [filteredItems[currentIdx], filteredItems[nextIdx], filteredItems[prevIdx]].forEach(
-                            (it) => {
-                              if (it?.image) {
-                                const img = new window.Image();
-                                img.src = it.image;
-                              }
-                            }
-                          );
-                        }}
-                        className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate"
-                      >
-                        {/* Media Container: Natural Aspect Ratio for both Photos & Videos */}
-                        <div className="relative w-full overflow-hidden">
-                          <Image
-                            src={itemThumbnail}
-                            alt={item.subcategoryLabel}
-                            width={1200}
-                            height={1200}
-                            unoptimized
-                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                            className="w-full h-auto block object-cover transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-105"
-                          />
-
-                          {/* Clean Subtle Gradient for Contrast on Tag */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-40 group-hover:opacity-60 transition-opacity duration-300 pointer-events-none" />
-
-                          {/* Central Video Play Indicator for video items */}
-                          {item.type === 'video' && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                              <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/90 text-black flex items-center justify-center shadow-xl backdrop-blur-md transition-all duration-300 transform scale-95 group-hover:scale-110 group-hover:bg-white">
-                                <Play className="w-6 h-6 md:w-7 md:h-7 fill-current translate-x-0.5" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Bottom-Left Tag: Subcategory Only */}
-                          <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
-                            <span className="text-[11px] font-semibold tracking-wider uppercase text-white/95 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 shadow-sm inline-block">
-                              {item.subcategoryLabel}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                      item={item}
+                      idx={idx}
+                      fullIndex={fullIndex}
+                      hasMounted={hasMounted}
+                      filteredItems={filteredItems}
+                      isLightboxOpen={lightboxOpen}
+                      onOpenLightbox={openLightbox}
+                    />
                   );
                 })}
               </div>
