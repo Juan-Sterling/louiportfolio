@@ -80,6 +80,7 @@ export default function ModernGallery({
 }: ModernGalleryProps = {}) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [hasMounted, setHasMounted] = useState<boolean>(false);
+  const [isInitialEntrance, setIsInitialEntrance] = useState<boolean>(true);
   const [items, setItems] = useState<MediaItem[]>(
     initialItems && initialItems.length > 0 ? initialItems : fallbackPortfolioItems
   );
@@ -122,6 +123,14 @@ export default function ModernGallery({
   useEffect(() => {
     setHasMounted(true);
 
+    const timer = setTimeout(() => {
+      setIsInitialEntrance(false);
+    }, 2400);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (initialItems && initialItems.length > 0) {
       return;
     }
@@ -238,6 +247,7 @@ export default function ModernGallery({
 
   // Handle switching main category
   const handleSelectCategory = (catId: string) => {
+    setIsInitialEntrance(false);
     setActiveCategory(catId);
     setActiveSubcategory('all'); // Reset subcategory filter when switching main category
     setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
@@ -245,6 +255,7 @@ export default function ModernGallery({
 
   // Handle switching subcategory
   const handleSelectSubcategory = (subId: string) => {
+    setIsInitialEntrance(false);
     setActiveSubcategory(subId);
     setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
   };
@@ -278,39 +289,7 @@ export default function ModernGallery({
     return result;
   }, [items, activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
 
-  // Proactive background preloader for instant lightbox viewing
-  useEffect(() => {
-    if (typeof window === 'undefined' || filteredItems.length === 0) return;
 
-    const preloadGalleryImages = () => {
-      // Preload first 24 gallery items so they are already cached and GPU-decoded in browser memory
-      filteredItems.slice(0, 24).forEach((item) => {
-        const src =
-          item.type === 'video' && item.videoUrl
-            ? getYouTubeThumbnail(item.videoUrl)
-            : item.image;
-        if (src) {
-          const img = new window.Image();
-          img.src = src;
-          if ('decode' in img) {
-            img.decode().catch(() => { });
-          }
-        }
-      });
-    };
-
-    if ('requestIdleCallback' in window) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handle = (window as any).requestIdleCallback(preloadGalleryImages, {
-        timeout: 2000,
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return () => (window as any).cancelIdleCallback(handle);
-    } else {
-      const timer = setTimeout(preloadGalleryImages, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [filteredItems]);
 
   // Fitur Load More / Show Less disimpan (di-keep), saat ini dinonaktifkan sementara menunggu persetujuan client
   // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
@@ -578,7 +557,7 @@ export default function ModernGallery({
                   <div
                     className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
                     style={{
-                      animationDelay: `${hasMounted ? 35 : 360}ms`,
+                      animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
                     }}
                   >
                     <div className="flex items-center gap-2 mb-3">
@@ -612,6 +591,7 @@ export default function ModernGallery({
                       idx={idx}
                       fullIndex={fullIndex}
                       hasMounted={hasMounted}
+                      isInitialEntrance={isInitialEntrance}
                       filteredItems={filteredItems}
                       isLightboxOpen={lightboxOpen}
                       onOpenLightbox={openLightbox}

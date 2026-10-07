@@ -14,6 +14,7 @@ interface GalleryCardProps {
   idx: number;
   fullIndex: number;
   hasMounted: boolean;
+  isInitialEntrance?: boolean;
   filteredItems: MediaItem[];
   isLightboxOpen?: boolean;
   onOpenLightbox: (index: number) => void;
@@ -24,6 +25,7 @@ export default function GalleryCard({
   idx,
   fullIndex,
   hasMounted,
+  isInitialEntrance = true,
   filteredItems,
   isLightboxOpen = false,
   onOpenLightbox,
@@ -39,9 +41,12 @@ export default function GalleryCard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Staggered entrance animation delay
-  const baseDelay = hasMounted ? 35 : 380;
-  const stepDelay = hasMounted ? 35 : 55;
-  const cardDelay = Math.min(idx * stepDelay + baseDelay, hasMounted ? 450 : 950);
+  // During first load: a clear, cinematic cascade so the user sees each card reveal
+  // After initial load (when filtering): snappy 40ms stagger so filtering feels instant
+  const baseDelay = isInitialEntrance ? 650 : 40;
+  const stepDelay = isInitialEntrance ? 75 : 40;
+  const maxDelay = isInitialEntrance ? 1650 : 480;
+  const cardDelay = Math.min(idx * stepDelay + baseDelay, maxDelay);
 
   // Thumbnail source
   const itemThumbnail =
@@ -82,23 +87,9 @@ export default function GalleryCard({
     setHasCompletedPreview(true);
   }, [clearTimers]);
 
-  // Mouse enter: Prefetch images & trigger debounced 10s video preview
+  // Mouse enter: trigger debounced 10s video preview
   const handleMouseEnter = () => {
-    // 1. Proactively cache neighbor images for instant lightbox navigation
-    const currentIdx = fullIndex !== -1 ? fullIndex : idx;
-    const nextIdx = (currentIdx + 1) % filteredItems.length;
-    const prevIdx = (currentIdx - 1 + filteredItems.length) % filteredItems.length;
-
-    [filteredItems[currentIdx], filteredItems[nextIdx], filteredItems[prevIdx]].forEach(
-      (it) => {
-        if (it?.image) {
-          const img = new window.Image();
-          img.src = it.image;
-        }
-      }
-    );
-
-    // 2. If item is a video and lightbox is closed, trigger 10-second hover preview
+    // If item is a video and lightbox is closed, trigger 10-second hover preview
     if (isVideo && !isLightboxOpen) {
       clearTimers();
       setHasCompletedPreview(false);
@@ -151,7 +142,7 @@ export default function GalleryCard({
         onClick={() => onOpenLightbox(fullIndex !== -1 ? fullIndex : idx)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate select-none"
+        className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 isolate select-none transform-gpu"
       >
         {/* Media Container */}
         <div className="relative w-full overflow-hidden">
