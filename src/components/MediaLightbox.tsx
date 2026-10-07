@@ -347,12 +347,17 @@ export default function MediaLightbox({
     });
   }, [currentItem]);
 
+  // Toggle overlay controls (filmstrip & navigation arrows)
+  const toggleOverlayControls = useCallback(() => {
+    setShowOverlayControls((prev) => !prev);
+  }, []);
+
   // Single-click / tap on media to toggle filmstrip & navigation arrows
   const handleMediaClick = (e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // Prevent mobile touch ghost-click from toggling twice within 450ms
-    if (Date.now() - lastTouchToggleTimeRef.current < 450) {
+    // Prevent mobile touch ghost-click from toggling twice within 700ms
+    if (Date.now() - lastTouchToggleTimeRef.current < 700) {
       return;
     }
 
@@ -362,19 +367,19 @@ export default function MediaLightbox({
     }
 
     if (currentItem?.type === 'video') {
-      setShowOverlayControls((prev) => !prev);
+      toggleOverlayControls();
       return;
     }
 
-    // Debounce single-click slightly so double-click zoom doesn't trigger UI toggle
+    // Debounce single-click slightly so double-click zoom doesn't trigger UI toggle on photos
     if (clickTimeoutRef.current) {
       clearTimeout(clickTimeoutRef.current);
       clickTimeoutRef.current = null;
     } else {
       clickTimeoutRef.current = setTimeout(() => {
         clickTimeoutRef.current = null;
-        setShowOverlayControls((prev) => !prev);
-      }, 230);
+        toggleOverlayControls();
+      }, 220);
     }
   };
 
@@ -658,9 +663,9 @@ export default function MediaLightbox({
       const elapsedTime = Date.now() - touchStartPos.current.time;
 
       if (
-        Math.abs(deltaX) > 36 &&
+        Math.abs(deltaX) > 35 &&
         Math.abs(deltaX) > Math.abs(deltaY) * 1.2 &&
-        elapsedTime < 500
+        elapsedTime < 600
       ) {
         // Horizontal swipe gesture for photo AND video!
         if (deltaX < 0) {
@@ -668,17 +673,15 @@ export default function MediaLightbox({
         } else {
           handlePrev();
         }
-      } else if (
-        Math.abs(deltaX) < 16 &&
-        Math.abs(deltaY) < 16 &&
-        elapsedTime < 350
-      ) {
-        // Single tap on mobile screen
         lastTouchToggleTimeRef.current = Date.now();
-        setShowOverlayControls((prev) => !prev);
-        if (currentItem?.type === 'video') {
-          toggleVideoPlayback();
-        }
+      } else if (
+        Math.abs(deltaX) < 25 &&
+        Math.abs(deltaY) < 25 &&
+        elapsedTime < 450
+      ) {
+        // Single tap on mobile screen (Photo and Video)
+        lastTouchToggleTimeRef.current = Date.now();
+        toggleOverlayControls();
       }
     }
   };
@@ -957,9 +960,10 @@ export default function MediaLightbox({
               className="w-full h-full object-cover"
             />
 
-            {/* Mobile Touch Gesture Overlay for Video: enables horizontal swipe & single tap */}
+            {/* Gesture & Click Overlay for Video: enables horizontal swipe & single-click toggle on mobile and desktop */}
             <div
-              className="absolute inset-0 z-20 md:hidden flex items-center justify-center cursor-pointer select-none touch-pan-y"
+              className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer select-none touch-pan-y"
+              onClick={handleMediaClick}
               onTouchStart={handleTouchStart}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
@@ -982,6 +986,30 @@ export default function MediaLightbox({
                 </div>
               )}
             </div>
+
+            {/* Dedicated Play/Pause Controller in bottom-left corner when controls are shown */}
+            {showOverlayControls && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleVideoPlayback();
+                }}
+                className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white text-xs font-medium border border-white/20 backdrop-blur-md shadow-lg transition-all active:scale-95"
+                title={isVideoPlaying ? 'Pause Video' : 'Play Video'}
+              >
+                {isVideoPlaying ? (
+                  <>
+                    <Pause className="w-3.5 h-3.5 fill-current" />
+                    <span className="text-[11px] font-sans">Pause</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span className="text-[11px] font-sans">Play</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         ) : (
           /* Pure Fullscreen Photo View */
