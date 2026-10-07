@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
 import {
   Search,
@@ -10,6 +10,10 @@ import {
   Play,
   Video,
   Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { AdminCategory } from '@/types/admin';
 import { MediaItem } from '@/data/portfolioData';
@@ -35,6 +39,19 @@ interface ContentsTabProps {
   onDeselectAll: () => void;
 }
 
+function getPageNumbers(current: number, total: number): (number | string)[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total];
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
 export default function ContentsTab({
   items,
   filteredItems,
@@ -55,6 +72,52 @@ export default function ContentsTab({
   onOpenBulkDelete,
   onDeselectAll,
 }: ContentsTabProps) {
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  // Reset to first page when search query, filter, or page size changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedStatus, pageSize]);
+
+  // Pagination calculations
+  const totalItems = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  const currentItems = useMemo(() => {
+    return filteredItems.slice(startIndex, endIndex);
+  }, [filteredItems, startIndex, endIndex]);
+
+  // Check if all items on current page are selected
+  const isCurrentPageAllSelected =
+    currentItems.length > 0 &&
+    currentItems.every((item) => selectedItemIds.includes(item.id));
+
+  // Toggle selection for current page
+  const handleToggleCurrentPage = () => {
+    if (isCurrentPageAllSelected) {
+      // Unselect current page items
+      const currentPageIds = new Set(currentItems.map((i) => i.id));
+      for (const id of currentPageIds) {
+        if (selectedItemIds.includes(id)) {
+          onToggleSelectItem(id);
+        }
+      }
+    } else {
+      // Select all on current page
+      for (const item of currentItems) {
+        if (!selectedItemIds.includes(item.id)) {
+          onToggleSelectItem(item.id);
+        }
+      }
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Filter & Search Bar */}
@@ -76,7 +139,7 @@ export default function ContentsTab({
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="bg-[#1e1e24] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+            className="bg-[#1e1e24] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
           >
             <option value="all">All Categories</option>
             {categoriesList.map((cat) => (
@@ -89,7 +152,7 @@ export default function ContentsTab({
           <select
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-[#1e1e24] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+            className="bg-[#1e1e24] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
           >
             <option value="all">All Status</option>
             <option value="published">Published (Live)</option>
@@ -100,7 +163,7 @@ export default function ContentsTab({
           <button
             type="button"
             onClick={onOpenCreateContent}
-            className="bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2 rounded-xl hover:bg-neutral-200 transition-all flex items-center gap-1.5"
+            className="bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2 rounded-xl hover:bg-neutral-200 transition-all flex items-center gap-1.5 shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>+ Add New Work</span>
@@ -120,7 +183,7 @@ export default function ContentsTab({
                 {selectedItemIds.length} {selectedItemIds.length === 1 ? 'Work' : 'Works'} Selected
               </span>
               <span className="text-xs text-neutral-400 block font-sans">
-                Apply bulk updates or deletion across all selected items
+                Apply bulk updates or deletion across selected items
               </span>
             </div>
           </div>
@@ -155,8 +218,8 @@ export default function ContentsTab({
         </div>
       )}
 
-      {/* Contents Table */}
-      <div className="bg-[#15151a] border border-white/10 rounded-3xl overflow-hidden shadow-xl">
+      {/* Contents Table Card */}
+      <div className="bg-[#15151a] border border-white/10 rounded-3xl overflow-hidden shadow-xl flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -164,17 +227,13 @@ export default function ContentsTab({
                 <th className="py-4 px-4 w-12 text-center">
                   <input
                     type="checkbox"
-                    checked={
-                      filteredItems.length > 0 &&
-                      filteredItems.every((item) => selectedItemIds.includes(item.id))
-                    }
-                    onChange={onToggleSelectAll}
+                    checked={isCurrentPageAllSelected}
+                    onChange={handleToggleCurrentPage}
                     className="w-4 h-4 rounded border-white/20 bg-white/10 text-emerald-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-emerald-500"
                     title={
-                      filteredItems.length > 0 &&
-                      filteredItems.every((item) => selectedItemIds.includes(item.id))
-                        ? 'Deselect All'
-                        : 'Select All'
+                      isCurrentPageAllSelected
+                        ? 'Deselect all on this page'
+                        : 'Select all on this page'
                     }
                   />
                 </th>
@@ -193,7 +252,7 @@ export default function ContentsTab({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
+                currentItems.map((item) => (
                   <tr
                     key={item.id}
                     className={`hover:bg-white/[0.02] transition-colors group ${
@@ -311,6 +370,119 @@ export default function ContentsTab({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Footer Bar */}
+        <div className="bg-[#121216] border-t border-white/10 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 select-none">
+          {/* Left: Summary & Page Size Selector */}
+          <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-400">
+            <span>
+              Showing{' '}
+              <strong className="text-white font-mono">
+                {totalItems === 0 ? 0 : startIndex + 1}
+              </strong>{' '}
+              to <strong className="text-white font-mono">{endIndex}</strong> of{' '}
+              <strong className="text-white font-mono">{totalItems}</strong> works
+            </span>
+
+            <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+              <span>Show</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-[#1e1e24] border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-white/30 cursor-pointer"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>per page</span>
+            </div>
+          </div>
+
+          {/* Right: Page Navigation Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5">
+              {/* Jump to First Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={safeCurrentPage === 1}
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:pointer-events-none transition-all"
+                title="First Page"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+
+              {/* Previous Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safeCurrentPage === 1}
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:pointer-events-none transition-all"
+                title="Previous Page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Numbered Page Buttons with Smart Ellipsis */}
+              <div className="flex items-center gap-1">
+                {getPageNumbers(safeCurrentPage, totalPages).map((pageNum, idx) => {
+                  if (pageNum === '...') {
+                    return (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="px-1 text-xs text-neutral-500 font-mono"
+                      >
+                        ...
+                      </span>
+                    );
+                  }
+                  const isCurrent = pageNum === safeCurrentPage;
+                  return (
+                    <button
+                      key={`page-${pageNum}`}
+                      type="button"
+                      onClick={() => setCurrentPage(Number(pageNum))}
+                      className={`w-8 h-8 rounded-lg text-xs font-mono font-medium transition-all ${
+                        isCurrent
+                          ? 'bg-white text-black font-bold shadow'
+                          : 'border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Next Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safeCurrentPage === totalPages}
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:pointer-events-none transition-all"
+                title="Next Page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              {/* Jump to Last Page */}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={safeCurrentPage === totalPages}
+                className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 bg-white/5 text-neutral-300 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:pointer-events-none transition-all"
+                title="Last Page"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
