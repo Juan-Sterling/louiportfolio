@@ -10,6 +10,8 @@ import {
   ZoomOut,
   RotateCcw,
   Play,
+  Pause,
+  ExternalLink,
   LayoutGrid,
 } from 'lucide-react';
 import {
@@ -49,6 +51,12 @@ export default function MediaLightbox({
 
   // Overall overlay controls visibility (toggled on single click/tap on screen)
   const [showOverlayControls, setShowOverlayControls] = useState<boolean>(true);
+
+  // Video playback ref & state for mobile touch gestures
+  const videoIframeRef = useRef<HTMLIFrameElement>(null);
+  const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
+  const isVideoPlayingRef = useRef<boolean>(true);
+  const [playPauseFeedback, setPlayPauseFeedback] = useState<'play' | 'pause' | null>(null);
 
   // Single-click timer ref to cleanly separate single-click (toggle UI) from double-click (zoom)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -104,6 +112,40 @@ export default function MediaLightbox({
     setIsDragging(false);
     isDraggingRef.current = false;
   }, []);
+
+  // Toggle video playback via postMessage for mobile overlay
+  const toggleVideoPlayback = useCallback(() => {
+    const iframe = videoIframeRef.current;
+    if (!iframe || !iframe.contentWindow) return;
+
+    const nextState = !isVideoPlayingRef.current;
+    isVideoPlayingRef.current = nextState;
+    setIsVideoPlaying(nextState);
+
+    const command = nextState ? 'playVideo' : 'pauseVideo';
+    iframe.contentWindow.postMessage(
+      JSON.stringify({ event: 'command', func: command, args: '' }),
+      '*'
+    );
+    if (nextState) {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+        '*'
+      );
+    }
+
+    setPlayPauseFeedback(nextState ? 'play' : 'pause');
+    setTimeout(() => {
+      setPlayPauseFeedback(null);
+    }, 650);
+  }, []);
+
+  // Reset video play state on item or open change
+  useEffect(() => {
+    setIsVideoPlaying(true);
+    isVideoPlayingRef.current = true;
+    setPlayPauseFeedback(null);
+  }, [currentIndex, isOpen]);
 
   // Sync active loaded image buffer when lightbox opens or closes
   useEffect(() => {
@@ -607,7 +649,7 @@ export default function MediaLightbox({
       return;
     }
 
-    // Touch gesture detection (Swipe navigation & Single-tap toggle)
+    // Touch gesture detection (Swipe navigation & Single-tap toggle for BOTH photo and video)
     if (e.changedTouches.length === 1) {
       const touchEndX = e.changedTouches[0].clientX;
       const touchEndY = e.changedTouches[0].clientY;
@@ -616,24 +658,27 @@ export default function MediaLightbox({
       const elapsedTime = Date.now() - touchStartPos.current.time;
 
       if (
-        currentItem?.type !== 'video' &&
-        Math.abs(deltaX) > 45 &&
-        Math.abs(deltaX) > Math.abs(deltaY) * 1.5 &&
-        elapsedTime < 450
+        Math.abs(deltaX) > 36 &&
+        Math.abs(deltaX) > Math.abs(deltaY) * 1.2 &&
+        elapsedTime < 500
       ) {
+        // Horizontal swipe gesture for photo AND video!
         if (deltaX < 0) {
           handleNext();
         } else {
           handlePrev();
         }
       } else if (
-        Math.abs(deltaX) < 14 &&
-        Math.abs(deltaY) < 14 &&
+        Math.abs(deltaX) < 16 &&
+        Math.abs(deltaY) < 16 &&
         elapsedTime < 350
       ) {
-        // Single tap on mobile screen to toggle filmstrip & nav buttons!
+        // Single tap on mobile screen
         lastTouchToggleTimeRef.current = Date.now();
         setShowOverlayControls((prev) => !prev);
+        if (currentItem?.type === 'video') {
+          toggleVideoPlayback();
+        }
       }
     }
   };
@@ -809,6 +854,21 @@ export default function MediaLightbox({
             </div>
           )}
 
+          {/* Open in YouTube Link for Video */}
+          {currentItem.type === 'video' && currentItem.videoUrl && (
+            <a
+              href={currentItem.videoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 shrink-0"
+              title="Open in YouTube"
+              aria-label="Open in YouTube"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </a>
+          )}
+
           {/* Close Button */}
           <button
             onClick={onClose}
@@ -861,7 +921,7 @@ export default function MediaLightbox({
 
       {/* Central Media Stage */}
       <div
-        className={`relative w-full max-w-[96vw] xl:max-w-[94vw] 2xl:max-w-[1650px] flex items-center justify-center my-auto transition-all duration-300 ${
+        className={`relative w-full max-w-[96vw] xl:max-w-[94vw] 2xl:max-w-[1650px] flex items-center justify-center my-auto transition-all duration-300 touch-pan-y ${
           showOverlayControls && showThumbnails && items.length > 1
             ? 'h-[calc(100vh-130px)] sm:h-[calc(100vh-140px)] min-h-[300px] pt-10 sm:pt-12 pb-1'
             : 'h-[calc(100vh-75px)] sm:h-[calc(100vh-85px)] min-h-[320px] pt-8 sm:pt-10 pb-1'
@@ -871,6 +931,9 @@ export default function MediaLightbox({
           e.stopPropagation();
           backdropMouseDownRef.current = false;
         }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {currentItem.type === 'video' ? (
           /* Video Modal Player */
@@ -883,15 +946,42 @@ export default function MediaLightbox({
             } max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10`}
           >
             <iframe
+              ref={videoIframeRef}
               src={
                 getYouTubeEmbedUrl(currentItem.videoUrl) ||
-                'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1'
+                'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
               }
               title={currentItem.subcategoryLabel || currentItem.title || 'YouTube Video Player'}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
               className="w-full h-full object-cover"
             />
+
+            {/* Mobile Touch Gesture Overlay for Video: enables horizontal swipe & single tap */}
+            <div
+              className="absolute inset-0 z-20 md:hidden flex items-center justify-center cursor-pointer select-none touch-pan-y"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {/* Play / Pause instant feedback animation */}
+              {playPauseFeedback && (
+                <div className="w-16 h-16 rounded-full bg-black/75 backdrop-blur-md text-white flex items-center justify-center pointer-events-none animate-fadeIn shadow-2xl border border-white/20">
+                  {playPauseFeedback === 'play' ? (
+                    <Play className="w-7 h-7 fill-current translate-x-0.5" />
+                  ) : (
+                    <Pause className="w-7 h-7 fill-current" />
+                  )}
+                </div>
+              )}
+
+              {/* Show persistent play badge if video is paused */}
+              {!isVideoPlaying && !playPauseFeedback && (
+                <div className="w-16 h-16 rounded-full bg-black/65 backdrop-blur-md text-white flex items-center justify-center pointer-events-none shadow-2xl border border-white/20">
+                  <Play className="w-7 h-7 fill-current translate-x-0.5" />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* Pure Fullscreen Photo View */

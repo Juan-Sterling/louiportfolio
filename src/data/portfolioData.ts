@@ -148,7 +148,7 @@ export function getYouTubeEmbedUrl(urlOrId?: string, autoplay: boolean = true): 
   if (!urlOrId) return '';
   const videoId = getYouTubeVideoId(urlOrId);
   if (!videoId) return urlOrId;
-  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1`;
+  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1&enablejsapi=1`;
 }
 
 /**
