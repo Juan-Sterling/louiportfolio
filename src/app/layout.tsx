@@ -12,11 +12,14 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://louiportfolio.my.canva.site"),
-  title: "LOUI — Portfolio",
+  title: {
+    default: "LOUI PORTFOLIO",
+    template: "%s | LOUI PORTFOLIO",
+  },
   description:
     "Official portfolio of LOUI based in Bandung, West Java, Indonesia. Showcasing Graphic Design, Photography, Videography, and Loui Tee collections.",
   openGraph: {
-    title: "LOUI — Portfolio",
+    title: "LOUI PORTFOLIO",
     description:
       "Based in Bandung, West Java, Indonesia. Explore Graphic Design, Photography, Videography, and Loui Tee.",
     type: "website",
@@ -31,8 +34,12 @@ export const metadata: Metadata = {
     ],
   },
   icons: {
-    icon: "/images/loui-logo.png",
-    apple: "/images/loui-logo.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
   },
 };
 
