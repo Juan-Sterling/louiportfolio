@@ -992,24 +992,58 @@ export default function AdminPage() {
   const handleDeleteCategory = async () => {
     if (!deletingCategory) return;
 
+    // Dependency check: Category must not have subcategories or contents
+    const childSubcategoriesCount = deletingCategory.subcategories?.length || 0;
+    const linkedContentsCount = items.filter((i) => {
+      if (i.category === deletingCategory.id) return true;
+      if (i.categoryLabel && deletingCategory.label && i.categoryLabel.toLowerCase() === deletingCategory.label.toLowerCase()) return true;
+      return deletingCategory.subcategories?.some(
+        (s) =>
+          s.id === i.subcategory ||
+          (s.label && i.subcategoryLabel && s.label.toLowerCase() === i.subcategoryLabel.toLowerCase())
+      );
+    }).length;
+
+    if (childSubcategoriesCount > 0 || linkedContentsCount > 0) {
+      showToast(
+        `Cannot delete: Category "${deletingCategory.label}" is in use (${linkedContentsCount} works, ${childSubcategoriesCount} subcategories). Delete associated items first.`
+      );
+      setDeletingCategory(null);
+      return;
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         if (deletingCategory.id && !deletingCategory.id.startsWith('cat-')) {
-          await supabase.from('categories').delete().eq('id', deletingCategory.id);
+          // Double-check database foreign keys
+          const { count: dbSubcatCount } = await supabase
+            .from('subcategories')
+            .select('*', { count: 'exact', head: true })
+            .eq('category_id', deletingCategory.id);
+
+          if (dbSubcatCount && dbSubcatCount > 0) {
+            showToast(
+              `Cannot delete: There are still ${dbSubcatCount} subcategories in the database for this category.`
+            );
+            setDeletingCategory(null);
+            return;
+          }
+
+          const { error } = await supabase.from('categories').delete().eq('id', deletingCategory.id);
+          if (error) {
+            console.warn('Category delete error:', error);
+            showToast(`Failed to delete category: ${error.message}`);
+            setDeletingCategory(null);
+            return;
+          }
         }
       } catch (err) {
         console.warn('Category delete notice:', err);
       }
     }
 
+    // Only remove the empty category from local state
     setCategoriesList((prev) => prev.filter((c) => c.id !== deletingCategory.id));
-    setItems((prev) =>
-      prev.filter(
-        (i) =>
-          i.category !== deletingCategory.id &&
-          i.categoryLabel.toLowerCase() !== deletingCategory.label.toLowerCase()
-      )
-    );
     showToast(`Category "${deletingCategory.label}" deleted.`);
     setDeletingCategory(null);
   };
@@ -1138,16 +1172,54 @@ export default function AdminPage() {
     if (!deletingSubcategory) return;
     const { categoryId, subcategory } = deletingSubcategory;
 
+    // Dependency check: Subcategory must not be used by any contents
+    const linkedContentsCount = items.filter(
+      (i) =>
+        i.subcategory === subcategory.id ||
+        (i.subcategoryLabel &&
+          subcategory.label &&
+          i.subcategoryLabel.toLowerCase() === subcategory.label.toLowerCase())
+    ).length;
+
+    if (linkedContentsCount > 0) {
+      showToast(
+        `Cannot delete: Subcategory "${subcategory.label}" is in use by ${linkedContentsCount} works. Delete works first.`
+      );
+      setDeletingSubcategory(null);
+      return;
+    }
+
     if (isSupabaseConfigured && supabase) {
       try {
         if (subcategory.id && !subcategory.id.startsWith('sub-')) {
-          await supabase.from('subcategories').delete().eq('id', subcategory.id);
+          // Double-check database foreign keys
+          const { count: dbContentCount } = await supabase
+            .from('contents')
+            .select('*', { count: 'exact', head: true })
+            .eq('subcategory_id', subcategory.id);
+
+          if (dbContentCount && dbContentCount > 0) {
+            showToast(
+              `Cannot delete: There are still ${dbContentCount} contents in the database using this subcategory.`
+            );
+            setDeletingSubcategory(null);
+            return;
+          }
+
+          const { error } = await supabase.from('subcategories').delete().eq('id', subcategory.id);
+          if (error) {
+            console.warn('Subcategory delete error:', error);
+            showToast(`Failed to delete subcategory: ${error.message}`);
+            setDeletingSubcategory(null);
+            return;
+          }
         }
       } catch (err) {
         console.warn('Subcategory delete notice:', err);
       }
     }
 
+    // Only remove the empty subcategory from local state
     setCategoriesList((prev) =>
       prev.map((c) =>
         c.id === categoryId
@@ -1156,14 +1228,6 @@ export default function AdminPage() {
               subcategories: c.subcategories.filter((s) => s.id !== subcategory.id),
             }
           : c
-      )
-    );
-
-    setItems((prev) =>
-      prev.filter(
-        (i) =>
-          i.subcategory !== subcategory.id &&
-          i.subcategoryLabel.toLowerCase() !== subcategory.label.toLowerCase()
       )
     );
 
@@ -1347,6 +1411,7 @@ export default function AdminPage() {
         deletingSubcategory={deletingSubcategory}
         onCloseDeleteSubcategory={() => setDeletingSubcategory(null)}
         onConfirmDeleteSubcategory={handleDeleteSubcategory}
+        items={items}
       />
 
       <BulkModals

@@ -67,7 +67,17 @@ export default function CategoriesTab({
       {/* Categories Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {categoriesList.map((cat) => {
-          const itemCount = items.filter((i) => i.categoryLabel === cat.label).length;
+          const childSubcategoriesCount = cat.subcategories.length;
+          const linkedContentsCount = items.filter((i) => {
+            if (i.category === cat.id) return true;
+            if (i.categoryLabel && cat.label && i.categoryLabel.toLowerCase() === cat.label.toLowerCase()) return true;
+            return cat.subcategories.some(
+              (s) =>
+                s.id === i.subcategory ||
+                (s.label && i.subcategoryLabel && s.label.toLowerCase() === i.subcategoryLabel.toLowerCase())
+            );
+          }).length;
+          const isCatInUse = childSubcategoriesCount > 0 || linkedContentsCount > 0;
 
           return (
             <div
@@ -78,7 +88,7 @@ export default function CategoriesTab({
                 {/* Card Header */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-mono bg-white/10 text-white px-2.5 py-0.5 rounded-full">
-                    {itemCount} Works
+                    {linkedContentsCount} Works
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -92,8 +102,16 @@ export default function CategoriesTab({
                     <button
                       type="button"
                       onClick={() => onOpenDeleteCategory(cat)}
-                      className="w-7 h-7 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 flex items-center justify-center transition-all"
-                      title="Delete Category"
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                        isCatInUse
+                          ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400'
+                          : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
+                      }`}
+                      title={
+                        isCatInUse
+                          ? `Category in use (${linkedContentsCount} works, ${childSubcategoriesCount} subcategories) - Click for details`
+                          : 'Delete Category'
+                      }
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -132,28 +150,55 @@ export default function CategoriesTab({
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {cat.subcategories.map((sub) => {
+                      const subItemCount = items.filter(
+                        (i) =>
+                          i.subcategory === sub.id ||
+                          (i.subcategoryLabel &&
+                            sub.label &&
+                            i.subcategoryLabel.toLowerCase() === sub.label.toLowerCase())
+                      ).length;
+                      const isSubInUse = subItemCount > 0;
+
                       return (
                         <div
                           key={sub.id}
-                          className="group flex items-center gap-1.5 text-xs bg-white/5 hover:bg-white/10 border border-white/10 pl-3 pr-2 py-1.5 rounded-xl text-neutral-200 transition-all"
+                          className="group flex items-center gap-2 text-xs bg-white/5 hover:bg-white/10 border border-white/10 pl-3 pr-2 py-1.5 rounded-xl text-neutral-200 transition-all"
                         >
                           <span>{sub.label}</span>
-                          <button
-                            type="button"
-                            onClick={() => onOpenEditSubcategory(cat.id, sub)}
-                            className="p-1 text-neutral-400 hover:text-white transition-colors"
-                            title="Edit Subcategory"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onOpenDeleteSubcategory(cat.id, sub)}
-                            className="p-1 text-red-400/70 hover:text-red-400 transition-colors"
-                            title="Delete Subcategory"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {subItemCount > 0 && (
+                            <span
+                              className="text-[10px] font-mono text-neutral-400 bg-black/40 px-1.5 py-0.5 rounded-md"
+                              title={`${subItemCount} works in this subcategory`}
+                            >
+                              {subItemCount}
+                            </span>
+                          )}
+                          <div className="flex items-center gap-0.5 ml-1">
+                            <button
+                              type="button"
+                              onClick={() => onOpenEditSubcategory(cat.id, sub)}
+                              className="p-1 text-neutral-400 hover:text-white transition-colors"
+                              title="Edit Subcategory"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onOpenDeleteSubcategory(cat.id, sub)}
+                              className={`p-1 transition-colors ${
+                                isSubInUse
+                                  ? 'text-amber-400/80 hover:text-amber-400'
+                                  : 'text-red-400/70 hover:text-red-400'
+                              }`}
+                              title={
+                                isSubInUse
+                                  ? `Subcategory in use (${subItemCount} works) - Click for details`
+                                  : 'Delete Subcategory'
+                              }
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
