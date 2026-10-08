@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import Image from 'next/image';
 import { X, Edit3, Trash2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { AdminCategory, BulkEditFormData } from '@/types/admin';
-import { MediaItem } from '@/data/portfolioData';
+import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
 
 interface BulkModalsProps {
   // Bulk Edit
@@ -40,8 +40,18 @@ export default function BulkModals({
   onCloseBulkDelete,
   onConfirmBulkDelete,
 }: BulkModalsProps) {
+  const sortedCategories = useMemo(() => {
+    return [...categoriesList].sort(
+      (a, b) => (a.order_index ?? 9999) - (b.order_index ?? 9999)
+    );
+  }, [categoriesList]);
+
   const bulkCategoryObj = categoriesList.find((c) => c.id === bulkEditData.categoryId);
-  const bulkAvailableSubcategories = bulkCategoryObj?.subcategories || [];
+  const bulkAvailableSubcategories = useMemo(() => {
+    return [...(bulkCategoryObj?.subcategories || [])].sort(
+      (a, b) => (a.order_index ?? 9999) - (b.order_index ?? 9999)
+    );
+  }, [bulkCategoryObj]);
 
   return (
     <>
@@ -49,7 +59,11 @@ export default function BulkModals({
       {isBulkEditModalOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex items-center justify-center animate-fadeIn"
-          onClick={() => !isBulkSaving && onCloseBulkEdit()}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isBulkSaving) {
+              onCloseBulkEdit();
+            }
+          }}
         >
           <div
             data-lenis-prevent="true"
@@ -119,10 +133,10 @@ export default function BulkModals({
                         }}
                         className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none"
                       >
-                        {categoriesList.length === 0 ? (
+                        {sortedCategories.length === 0 ? (
                           <option value="">(No categories available)</option>
                         ) : (
-                          categoriesList.map((c) => (
+                          sortedCategories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.label}
                             </option>
@@ -233,7 +247,11 @@ export default function BulkModals({
       {isBulkDeleteModalOpen && (
         <div
           className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex items-center justify-center animate-fadeIn"
-          onClick={() => !isBulkDeleting && onCloseBulkDelete()}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isBulkDeleting) {
+              onCloseBulkDelete();
+            }
+          }}
         >
           <div
             data-lenis-prevent="true"
@@ -268,7 +286,11 @@ export default function BulkModals({
                     title={item.subcategoryLabel}
                   >
                     <Image
-                      src={item.image}
+                      src={
+                        item.image ||
+                        getYouTubeThumbnail(item.videoUrl) ||
+                        'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>'
+                      }
                       alt={item.subcategoryLabel}
                       fill
                       sizes="48px"

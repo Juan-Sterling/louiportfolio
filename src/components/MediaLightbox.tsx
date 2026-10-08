@@ -18,7 +18,9 @@ import {
   MediaItem,
   getYouTubeEmbedUrl,
   getYouTubeThumbnail,
+  isYouTubeUrl,
 } from '@/data/portfolioData';
+import { resolveVideoPlayUrl } from '@/lib/r2';
 
 interface MediaLightboxProps {
   items: MediaItem[];
@@ -52,8 +54,9 @@ export default function MediaLightbox({
   // Overall overlay controls visibility (toggled on single click/tap on screen)
   const [showOverlayControls, setShowOverlayControls] = useState<boolean>(true);
 
-  // Video playback ref & state for mobile touch gestures
+  // Video playback ref & state for mobile touch gestures and direct video
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
+  const directVideoRef = useRef<HTMLVideoElement>(null);
   const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
   const isVideoPlayingRef = useRef<boolean>(true);
   const [playPauseFeedback, setPlayPauseFeedback] = useState<'play' | 'pause' | null>(null);
@@ -113,32 +116,55 @@ export default function MediaLightbox({
     isDraggingRef.current = false;
   }, []);
 
-  // Toggle video playback via postMessage for mobile overlay
+  // Toggle video playback via postMessage for YouTube or direct video element
   const toggleVideoPlayback = useCallback(() => {
-    const iframe = videoIframeRef.current;
-    if (!iframe || !iframe.contentWindow) return;
+    if (!currentItem || currentItem.type !== 'video') return;
 
-    const nextState = !isVideoPlayingRef.current;
-    isVideoPlayingRef.current = nextState;
-    setIsVideoPlaying(nextState);
+    if (isYouTubeUrl(currentItem.videoUrl)) {
+      const iframe = videoIframeRef.current;
+      if (!iframe || !iframe.contentWindow) return;
 
-    const command = nextState ? 'playVideo' : 'pauseVideo';
-    iframe.contentWindow.postMessage(
-      JSON.stringify({ event: 'command', func: command, args: '' }),
-      '*'
-    );
-    if (nextState) {
+      const nextState = !isVideoPlayingRef.current;
+      isVideoPlayingRef.current = nextState;
+      setIsVideoPlaying(nextState);
+
+      const command = nextState ? 'playVideo' : 'pauseVideo';
       iframe.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+        JSON.stringify({ event: 'command', func: command, args: '' }),
         '*'
       );
-    }
+      if (nextState) {
+        iframe.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
+          '*'
+        );
+      }
 
-    setPlayPauseFeedback(nextState ? 'play' : 'pause');
-    setTimeout(() => {
-      setPlayPauseFeedback(null);
-    }, 650);
-  }, []);
+      setPlayPauseFeedback(nextState ? 'play' : 'pause');
+      setTimeout(() => {
+        setPlayPauseFeedback(null);
+      }, 650);
+    } else {
+      const video = directVideoRef.current;
+      if (!video) return;
+
+      if (video.paused) {
+        video.play().catch(() => {});
+        isVideoPlayingRef.current = true;
+        setIsVideoPlaying(true);
+        setPlayPauseFeedback('play');
+      } else {
+        video.pause();
+        isVideoPlayingRef.current = false;
+        setIsVideoPlaying(false);
+        setPlayPauseFeedback('pause');
+      }
+
+      setTimeout(() => {
+        setPlayPauseFeedback(null);
+      }, 650);
+    }
+  }, [currentItem]);
 
   // Reset video play state on item or open change
   useEffect(() => {
@@ -868,20 +894,22 @@ export default function MediaLightbox({
             </div>
           )}
 
-          {/* Open in YouTube Link for Video */}
-          {currentItem.type === 'video' && currentItem.videoUrl && (
-            <a
-              href={currentItem.videoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 shrink-0"
-              title="Open in YouTube"
-              aria-label="Open in YouTube"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </a>
-          )}
+          {/* Open Link for Video: Only for YouTube */}
+          {currentItem.type === 'video' &&
+            currentItem.videoUrl &&
+            isYouTubeUrl(currentItem.videoUrl) && (
+              <a
+                href={currentItem.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 shrink-0"
+                title="Open in YouTube"
+                aria-label="Open in YouTube"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </a>
+            )}
 
           {/* Close Button */}
           <button
@@ -950,76 +978,108 @@ export default function MediaLightbox({
         onTouchEnd={handleTouchEnd}
       >
         {currentItem.type === 'video' ? (
-          /* Video Modal Player */
+          /* Video Modal Player (YouTube or Direct Cloudflare R2 / MP4) */
           <div
             key={currentItem.id || currentIndex}
             className={`relative w-full ${
               currentItem.videoUrl?.includes('/shorts/')
                 ? 'aspect-[4/5] max-w-lg sm:max-w-xl md:max-w-2xl'
                 : 'aspect-video max-w-6xl xl:max-w-7xl 2xl:max-w-[1450px]'
-            } max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10`}
+            } max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center`}
           >
-            <iframe
-              ref={videoIframeRef}
-              src={
-                getYouTubeEmbedUrl(currentItem.videoUrl) ||
-                'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
-              }
-              title={currentItem.subcategoryLabel || 'YouTube Video Player'}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              className="w-full h-full object-cover"
-            />
+            {isYouTubeUrl(currentItem.videoUrl) ? (
+              <>
+                <iframe
+                  ref={videoIframeRef}
+                  src={
+                    getYouTubeEmbedUrl(currentItem.videoUrl) ||
+                    'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
+                  }
+                  title={currentItem.subcategoryLabel || 'YouTube Video Player'}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  className="w-full h-full object-cover"
+                />
 
-            {/* Gesture & Click Overlay for Video: enables horizontal swipe & single-click toggle on mobile and desktop */}
-            <div
-              className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer select-none touch-pan-y"
-              onClick={handleMediaClick}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-            >
-              {/* Play / Pause instant feedback animation */}
-              {playPauseFeedback && (
-                <div className="w-16 h-16 rounded-full bg-black/75 backdrop-blur-md text-white flex items-center justify-center pointer-events-none animate-fadeIn shadow-2xl border border-white/20">
-                  {playPauseFeedback === 'play' ? (
-                    <Play className="w-7 h-7 fill-current translate-x-0.5" />
-                  ) : (
-                    <Pause className="w-7 h-7 fill-current" />
+                {/* Gesture & Click Overlay for Video: enables horizontal swipe & single-click toggle on mobile and desktop */}
+                <div
+                  className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer select-none touch-pan-y"
+                  onClick={handleMediaClick}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                >
+                  {/* Play / Pause instant feedback animation */}
+                  {playPauseFeedback && (
+                    <div className="w-16 h-16 rounded-full bg-black/75 backdrop-blur-md text-white flex items-center justify-center pointer-events-none animate-fadeIn shadow-2xl border border-white/20">
+                      {playPauseFeedback === 'play' ? (
+                        <Play className="w-7 h-7 fill-current translate-x-0.5" />
+                      ) : (
+                        <Pause className="w-7 h-7 fill-current" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Show persistent play badge if video is paused */}
+                  {!isVideoPlaying && !playPauseFeedback && (
+                    <div className="w-16 h-16 rounded-full bg-black/65 backdrop-blur-md text-white flex items-center justify-center pointer-events-none shadow-2xl border border-white/20">
+                      <Play className="w-7 h-7 fill-current translate-x-0.5" />
+                    </div>
                   )}
                 </div>
-              )}
 
-              {/* Show persistent play badge if video is paused */}
-              {!isVideoPlaying && !playPauseFeedback && (
-                <div className="w-16 h-16 rounded-full bg-black/65 backdrop-blur-md text-white flex items-center justify-center pointer-events-none shadow-2xl border border-white/20">
-                  <Play className="w-7 h-7 fill-current translate-x-0.5" />
-                </div>
-              )}
-            </div>
-
-            {/* Dedicated Play/Pause Controller in bottom-left corner when controls are shown */}
-            {showOverlayControls && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleVideoPlayback();
-                }}
-                className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white text-xs font-medium border border-white/20 backdrop-blur-md shadow-lg transition-all active:scale-95"
-                title={isVideoPlaying ? 'Pause Video' : 'Play Video'}
-              >
-                {isVideoPlaying ? (
-                  <>
-                    <Pause className="w-3.5 h-3.5 fill-current" />
-                    <span className="text-[11px] font-sans">Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span className="text-[11px] font-sans">Play</span>
-                  </>
+                {/* Dedicated Play/Pause Controller in bottom-left corner for YouTube */}
+                {showOverlayControls && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleVideoPlayback();
+                    }}
+                    className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white text-xs font-medium border border-white/20 backdrop-blur-md shadow-lg transition-all active:scale-95"
+                    title={isVideoPlaying ? 'Pause Video' : 'Play Video'}
+                  >
+                    {isVideoPlaying ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5 fill-current" />
+                        <span className="text-[11px] font-sans">Pause</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span className="text-[11px] font-sans">Play</span>
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
+              </>
+            ) : (
+              /* Direct Video Player */
+              <div
+                className="relative w-full h-full flex items-center justify-center bg-black select-none"
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                <video
+                  ref={directVideoRef}
+                  src={resolveVideoPlayUrl(currentItem.videoUrl)}
+                  poster={currentItem.image || undefined}
+                  controls
+                  controlsList="nodownload noplaybackrate"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  className="w-full h-full max-h-[85vh] object-contain rounded-2xl"
+                  onPlay={() => {
+                    isVideoPlayingRef.current = true;
+                    setIsVideoPlaying(true);
+                  }}
+                  onPause={() => {
+                    isVideoPlayingRef.current = false;
+                    setIsVideoPlaying(false);
+                  }}
+                />
+              </div>
             )}
           </div>
         ) : (
@@ -1127,10 +1187,11 @@ export default function MediaLightbox({
               className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none py-0.5 px-0.5 cursor-grab active:cursor-grabbing select-none"
             >
               {items.map((item, idx) => {
-                const thumb =
+                const rawThumb =
                   item.type === 'video' && item.videoUrl
                     ? getYouTubeThumbnail(item.videoUrl) || item.image
                     : item.image;
+                const thumb = resolveVideoPlayUrl(rawThumb);
                 const isActive = idx === currentIndex;
 
                 return (
@@ -1156,7 +1217,10 @@ export default function MediaLightbox({
                     title={`${idx + 1}. ${item.subcategoryLabel || 'Slide'}`}
                   >
                     <Image
-                      src={thumb}
+                      src={
+                        thumb ||
+                        'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>'
+                      }
                       alt={item.subcategoryLabel || `Thumb ${idx + 1}`}
                       fill
                       unoptimized

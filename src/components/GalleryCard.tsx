@@ -8,6 +8,7 @@ import {
   getYouTubeThumbnail,
   getYouTubeVideoId,
 } from '@/data/portfolioData';
+import { resolveVideoPlayUrl } from '@/lib/r2';
 
 interface GalleryCardProps {
   item: MediaItem;
@@ -44,17 +45,18 @@ function GalleryCard({
   const maxDelay = isInitialEntrance ? 1650 : 480;
   const cardDelay = Math.min(idx * stepDelay + baseDelay, maxDelay);
 
-  // Thumbnail source
-  const itemThumbnail =
-    item.type === 'video' && item.videoUrl
-      ? getYouTubeThumbnail(item.videoUrl) || item.image
-      : item.image;
-
   // Video helpers
   const isVideo = item.type === 'video' && Boolean(item.videoUrl);
+  const isYouTube = isVideo && item.videoUrl ? Boolean(getYouTubeVideoId(item.videoUrl)) : false;
+  const youtubeId = isYouTube && item.videoUrl ? getYouTubeVideoId(item.videoUrl) : null;
   const isShorts = isVideo && item.videoUrl ? item.videoUrl.includes('/shorts/') : false;
-  const youtubeId = isVideo && item.videoUrl ? getYouTubeVideoId(item.videoUrl) : null;
-  const isYouTube = Boolean(youtubeId);
+
+  // Thumbnail source with safe fallback for direct videos
+  const fallbackThumbnail = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600"><rect width="100%" height="100%" fill="%23141419"/></svg>';
+  const rawThumbnail =
+    (isYouTube && item.videoUrl ? getYouTubeThumbnail(item.videoUrl) || item.image : item.image) || fallbackThumbnail;
+  const itemThumbnail = resolveVideoPlayUrl(rawThumbnail);
+
 
   // Clear all pending timers and reset video element
   const clearTimers = useCallback(() => {
@@ -183,11 +185,14 @@ function GalleryCard({
               ) : (
                 <video
                   ref={videoRef}
-                  src={item.videoUrl}
+                  src={resolveVideoPlayUrl(item.videoUrl)}
                   autoPlay
                   muted
                   playsInline
                   preload="auto"
+                  controlsList="nodownload noplaybackrate"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
                   onLoadedData={() => setIsMediaReady(true)}
                   onTimeUpdate={(e) => {
                     if (e.currentTarget.currentTime >= 10) {

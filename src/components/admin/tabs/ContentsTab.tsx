@@ -14,9 +14,11 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Layers,
 } from 'lucide-react';
 import { AdminCategory } from '@/types/admin';
-import { MediaItem } from '@/data/portfolioData';
+import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
+import { resolveVideoPlayUrl } from '@/lib/r2';
 
 interface ContentsTabProps {
   items: MediaItem[];
@@ -32,6 +34,7 @@ interface ContentsTabProps {
   onToggleSelectItem: (id: string) => void;
   onToggleSelectAll: () => void;
   onOpenCreateContent: () => void;
+  onOpenBulkInsert: () => void;
   onOpenEditContent: (item: MediaItem) => void;
   onOpenDeleteContent: (item: MediaItem) => void;
   onOpenBulkEdit: () => void;
@@ -66,6 +69,7 @@ export default function ContentsTab({
   onToggleSelectItem,
   onToggleSelectAll,
   onOpenCreateContent,
+  onOpenBulkInsert,
   onOpenEditContent,
   onOpenDeleteContent,
   onOpenBulkEdit,
@@ -142,11 +146,13 @@ export default function ContentsTab({
             className="bg-[#1e1e24] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
           >
             <option value="all">All Categories</option>
-            {categoriesList.map((cat) => (
-              <option key={cat.id} value={cat.label}>
-                {cat.label}
-              </option>
-            ))}
+            {[...categoriesList]
+              .sort((a, b) => (a.order_index ?? 9999) - (b.order_index ?? 9999))
+              .map((cat) => (
+                <option key={cat.id} value={cat.label}>
+                  {cat.label}
+                </option>
+              ))}
           </select>
 
           <select
@@ -159,6 +165,15 @@ export default function ContentsTab({
             <option value="draft">Draft (Hidden)</option>
             <option value="archived">Archived</option>
           </select>
+
+          <button
+            type="button"
+            onClick={onOpenBulkInsert}
+            className="bg-emerald-500/15 hover:bg-emerald-500 border border-emerald-500/30 hover:border-emerald-500 text-emerald-300 hover:text-black font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>+ Bulk Insert</span>
+          </button>
 
           <button
             type="button"
@@ -274,7 +289,11 @@ export default function ContentsTab({
                       <div className="flex items-center gap-4">
                         <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
                           <Image
-                            src={item.image}
+                            src={
+                              (item.image ? resolveVideoPlayUrl(item.image) : '') ||
+                              getYouTubeThumbnail(item.videoUrl) ||
+                              'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>'
+                            }
                             alt={item.subcategoryLabel}
                             fill
                             sizes="64px"

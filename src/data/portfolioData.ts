@@ -57,6 +57,10 @@ export function getYouTubeEmbedUrl(urlOrId?: string, autoplay: boolean = true): 
   return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1&enablejsapi=1`;
 }
 
+export function isYouTubeUrl(url?: string): boolean {
+  return Boolean(getYouTubeVideoId(url));
+}
+
 /**
  * Returns thumbnail URL from YouTube
  * Defaults to maxresdefault.jpg (1280x720 HD) with hqdefault.jpg (480x360) option
@@ -67,9 +71,10 @@ export function getYouTubeThumbnail(
 ): string {
   if (!urlOrId) return '';
   const videoId = getYouTubeVideoId(urlOrId);
-  if (!videoId) return urlOrId;
+  if (!videoId) return '';
   return `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
 }
 
 // Default items are empty: all gallery content is dynamically driven by the database.
 export const portfolioItems: MediaItem[] = [];
+

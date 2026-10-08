@@ -20,6 +20,10 @@ export async function uploadToCloudinary(file: File): Promise<{
   format: string;
   resourceType: string;
 }> {
+  if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
+    throw new Error('GIF files are not allowed. Please upload PNG, JPG, WEBP, or AVIF.');
+  }
+
   if (file.size > MAX_FILE_SIZE_BYTES) {
     const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
     throw new Error(

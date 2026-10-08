@@ -6,12 +6,14 @@ export interface AdminSubCategory {
   id: string;
   label: string;
   description?: string;
+  order_index?: number;
 }
 
 export interface AdminCategory {
   id: string;
   label: string;
   description?: string;
+  order_index?: number;
   subcategories: AdminSubCategory[];
 }
 

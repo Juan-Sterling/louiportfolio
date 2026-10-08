@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   X,
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   Folder,
   Image as ImageIcon,
   Info,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AdminCategory,
@@ -24,6 +25,7 @@ interface CategoryModalsProps {
   categoryModalMode: 'create' | 'edit';
   categoryFormData: CategoryFormData;
   setCategoryFormData: React.Dispatch<React.SetStateAction<CategoryFormData>>;
+  isSavingCategory?: boolean;
   onCloseCategoryModal: () => void;
   onSaveCategory: (e: React.FormEvent) => void;
 
@@ -33,6 +35,7 @@ interface CategoryModalsProps {
   subcategoryFormData: SubcategoryFormData;
   setSubcategoryFormData: React.Dispatch<React.SetStateAction<SubcategoryFormData>>;
   categoriesList: AdminCategory[];
+  isSavingSubcategory?: boolean;
   onCloseSubcategoryModal: () => void;
   onSaveSubcategory: (e: React.FormEvent) => void;
 
@@ -57,6 +60,7 @@ export default function CategoryModals({
   categoryModalMode,
   categoryFormData,
   setCategoryFormData,
+  isSavingCategory = false,
   onCloseCategoryModal,
   onSaveCategory,
   isSubcategoryModalOpen,
@@ -64,6 +68,7 @@ export default function CategoryModals({
   subcategoryFormData,
   setSubcategoryFormData,
   categoriesList,
+  isSavingSubcategory = false,
   onCloseSubcategoryModal,
   onSaveSubcategory,
   deletingCategory,
@@ -74,6 +79,11 @@ export default function CategoryModals({
   onConfirmDeleteSubcategory,
   items = [],
 }: CategoryModalsProps) {
+  const sortedCategories = useMemo(() => {
+    return [...categoriesList].sort(
+      (a, b) => (a.order_index ?? 9999) - (b.order_index ?? 9999)
+    );
+  }, [categoriesList]);
   return (
     <>
       {/* 1. Category Modal (Add / Edit) */}
@@ -145,15 +155,24 @@ export default function CategoryModals({
                 <button
                   type="button"
                   onClick={onCloseCategoryModal}
-                  className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all"
+                  disabled={isSavingCategory}
+                  className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs uppercase tracking-wider hover:bg-neutral-200 transition-all shadow-md"
+                  disabled={isSavingCategory}
+                  className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs uppercase tracking-wider hover:bg-neutral-200 transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
                 >
-                  {categoryModalMode === 'create' ? 'Create Category' : 'Save Changes'}
+                  {isSavingCategory ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>{categoryModalMode === 'create' ? 'Creating...' : 'Saving...'}</span>
+                    </>
+                  ) : (
+                    categoryModalMode === 'create' ? 'Create Category' : 'Save Changes'
+                  )}
                 </button>
               </div>
             </form>
@@ -206,7 +225,7 @@ export default function CategoryModals({
                   }
                   className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none"
                 >
-                  {categoriesList.map((c) => (
+                  {sortedCategories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.label}
                     </option>
@@ -255,15 +274,24 @@ export default function CategoryModals({
                 <button
                   type="button"
                   onClick={onCloseSubcategoryModal}
-                  className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all"
+                  disabled={isSavingSubcategory}
+                  className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs uppercase tracking-wider hover:bg-neutral-200 transition-all shadow-md"
+                  disabled={isSavingSubcategory}
+                  className="px-5 py-2.5 rounded-xl bg-white text-black font-semibold text-xs uppercase tracking-wider hover:bg-neutral-200 transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
                 >
-                  {subcategoryModalMode === 'create' ? 'Add Subcategory' : 'Save Changes'}
+                  {isSavingSubcategory ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>{subcategoryModalMode === 'create' ? 'Adding...' : 'Saving...'}</span>
+                    </>
+                  ) : (
+                    subcategoryModalMode === 'create' ? 'Add Subcategory' : 'Save Changes'
+                  )}
                 </button>
               </div>
             </form>

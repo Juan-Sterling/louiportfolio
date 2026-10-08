@@ -1,17 +1,19 @@
 'use client';
 
 import React from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, RefreshCw } from 'lucide-react';
 import { MediaItem } from '@/data/portfolioData';
 
 interface DeleteContentModalProps {
   deletingItem: MediaItem | null;
+  isDeleting?: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
 
 export default function DeleteContentModal({
   deletingItem,
+  isDeleting = false,
   onClose,
   onConfirm,
 }: DeleteContentModalProps) {
@@ -20,7 +22,11 @@ export default function DeleteContentModal({
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex items-center justify-center animate-fadeIn"
-      onClick={onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isDeleting) {
+          onClose();
+        }
+      }}
     >
       <div
         data-lenis-prevent="true"
@@ -46,16 +52,25 @@ export default function DeleteContentModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all"
+            disabled={isDeleting}
+            className="px-5 py-2.5 rounded-xl border border-white/15 text-neutral-300 hover:text-white text-xs font-semibold uppercase tracking-wider transition-all disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md"
+            disabled={isDeleting}
+            className="px-5 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
           >
-            Delete Work
+            {isDeleting ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Deleting...</span>
+              </>
+            ) : (
+              'Delete Work'
+            )}
           </button>
         </div>
       </div>

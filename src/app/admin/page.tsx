@@ -7,6 +7,7 @@ import {
   MainCategory,
   MediaItem,
   getYouTubeThumbnail,
+  isYouTubeUrl,
 } from '@/data/portfolioData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -15,6 +16,14 @@ import {
   extractCloudinaryPublicId,
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/cloudinary';
+import {
+  uploadToR2,
+  deleteR2Media,
+  captureVideoFrame,
+  MAX_VIDEO_SIZE_BYTES,
+  isCloudflareR2Url,
+  extractR2Key,
+} from '@/lib/r2';
 import {
   TabType,
   AdminCategory,
@@ -35,6 +44,7 @@ import CategoriesTab from '@/components/admin/tabs/CategoriesTab';
 import ContentModal from '@/components/admin/modals/ContentModal';
 import CategoryModals from '@/components/admin/modals/CategoryModals';
 import BulkModals from '@/components/admin/modals/BulkModals';
+import BulkInsertModal from '@/components/admin/modals/BulkInsertModal';
 import DeleteContentModal from '@/components/admin/modals/DeleteContentModal';
 import ChangePasswordModal from '@/components/admin/modals/ChangePasswordModal';
 
@@ -60,6 +70,7 @@ export default function AdminPage() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
+  const [isBulkInsertModalOpen, setIsBulkInsertModalOpen] = useState(false);
   const [bulkEditData, setBulkEditData] = useState<BulkEditFormData>({
     updateCategory: true,
     categoryId: '',
@@ -96,9 +107,13 @@ export default function AdminPage() {
   // Hidden file input for replacing image
   const replaceFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Track images during modal session for clean cancellation and safe updates
+  // Track media during modal session for clean cancellation and safe updates
   const initialEditingImageRef = useRef<string>('');
+  const initialEditingVideoRef = useRef<string>('');
   const sessionUploadedImagesRef = useRef<string[]>([]);
+  const sessionUploadedVideosRef = useRef<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
 
   // Category Modal (Add / Edit Category)
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -123,6 +138,12 @@ export default function AdminPage() {
     categoryId: string;
     subcategory: AdminSubCategory;
   } | null>(null);
+
+  // Loading states for modal save and delete actions
+  const [isSavingContent, setIsSavingContent] = useState(false);
+  const [isDeletingContent, setIsDeletingContent] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const [isSavingSubcategory, setIsSavingSubcategory] = useState(false);
 
   const showToast = (message: string) => {
     setNotification(message);
@@ -177,31 +198,46 @@ export default function AdminPage() {
   const loadDatabaseData = async () => {
     if (!isSupabaseConfigured || !supabase) return;
     try {
-      // 1. Fetch categories
+      // 1. Fetch categories ordered by order_index
       const { data: catRows } = await supabase
         .from('categories')
         .select('*')
+        .order('order_index', { ascending: true })
         .order('created_at', { ascending: true });
 
-      // 2. Fetch subcategories
+      // 2. Fetch subcategories ordered by order_index
       const { data: subcatRows } = await supabase
         .from('subcategories')
         .select('*')
+        .order('order_index', { ascending: true })
         .order('created_at', { ascending: true });
 
       if (catRows) {
-        const structured: AdminCategory[] = catRows.map((cat) => ({
-          id: cat.id,
-          label: cat.label,
-          description: cat.description || '',
-          subcategories: (subcatRows || [])
-            .filter((s) => s.category_id === cat.id)
-            .map((s) => ({
-              id: s.id,
-              label: s.label,
-              description: s.description || '',
-            })),
-        }));
+        const structured: AdminCategory[] = [...catRows]
+          .sort((a, b) => {
+            const orderA = typeof a.order_index === 'number' ? a.order_index : 9999;
+            const orderB = typeof b.order_index === 'number' ? b.order_index : 9999;
+            return orderA - orderB;
+          })
+          .map((cat) => ({
+            id: cat.id,
+            label: cat.label,
+            description: cat.description || '',
+            order_index: typeof cat.order_index === 'number' ? cat.order_index : 9999,
+            subcategories: (subcatRows || [])
+              .filter((s) => s.category_id === cat.id)
+              .sort((a, b) => {
+                const orderA = typeof a.order_index === 'number' ? a.order_index : 9999;
+                const orderB = typeof b.order_index === 'number' ? b.order_index : 9999;
+                return orderA - orderB;
+              })
+              .map((s) => ({
+                id: s.id,
+                label: s.label,
+                description: s.description || '',
+                order_index: typeof s.order_index === 'number' ? s.order_index : 9999,
+              })),
+          }));
         setCategoriesList(structured);
       } else {
         setCategoriesList([]);
@@ -258,7 +294,7 @@ export default function AdminPage() {
     loadDatabaseData();
   }, []);
 
-  // Clean up uncommitted Cloudinary uploads on page unload or back navigation
+  // Clean up uncommitted Cloudinary / Cloudflare uploads on page unload or back navigation
   useEffect(() => {
     const handleUnload = () => {
       if (sessionUploadedImagesRef.current.length > 0) {
@@ -273,9 +309,36 @@ export default function AdminPage() {
                 })
               );
             }
+          } else if (isCloudflareR2Url(tempUrl)) {
+            const key = extractR2Key(tempUrl);
+            if (key && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+              navigator.sendBeacon(
+                '/api/media/r2/delete',
+                new Blob([JSON.stringify({ key })], {
+                  type: 'application/json',
+                })
+              );
+            }
           }
         }
         sessionUploadedImagesRef.current = [];
+      }
+
+      if (sessionUploadedVideosRef.current.length > 0) {
+        for (const tempUrl of sessionUploadedVideosRef.current) {
+          if (isCloudflareR2Url(tempUrl)) {
+            const key = extractR2Key(tempUrl);
+            if (key && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+              navigator.sendBeacon(
+                '/api/media/r2/delete',
+                new Blob([JSON.stringify({ key })], {
+                  type: 'application/json',
+                })
+              );
+            }
+          }
+        }
+        sessionUploadedVideosRef.current = [];
       }
     };
 
@@ -501,10 +564,17 @@ export default function AdminPage() {
     setIsBulkDeleting(true);
     const itemsToDelete = items.filter((i) => selectedItemIds.includes(i.id));
 
-    // Delete associated Cloudinary images
+    // Delete associated Cloudinary images & Cloudflare R2 videos and thumbnails
     for (const item of itemsToDelete) {
-      if (item.image && item.image.includes('res.cloudinary.com')) {
-        await deleteCloudinaryMedia(item.image);
+      if (item.image) {
+        if (item.image.includes('res.cloudinary.com')) {
+          await deleteCloudinaryMedia(item.image);
+        } else if (isCloudflareR2Url(item.image)) {
+          await deleteR2Media(item.image);
+        }
+      }
+      if (item.videoUrl && isCloudflareR2Url(item.videoUrl)) {
+        await deleteR2Media(item.videoUrl);
       }
     }
 
@@ -556,6 +626,7 @@ export default function AdminPage() {
     }
     setEditingItem(null);
     initialEditingImageRef.current = '';
+    initialEditingVideoRef.current = '';
     sessionUploadedImagesRef.current = [];
     const firstCat = categoriesList[0];
     const firstSub = firstCat?.subcategories[0];
@@ -569,13 +640,21 @@ export default function AdminPage() {
       videoUrl: '',
       status: 'published',
     });
+    sessionUploadedImagesRef.current = [];
+    sessionUploadedVideosRef.current = [];
+    setUploadProgress(null);
+    setUploadStatusText('');
     setIsContentModalOpen(true);
   };
 
   const openEditContentModal = (item: MediaItem) => {
     setEditingItem(item);
-    initialEditingImageRef.current = item.type === 'photo' ? item.image || '' : '';
+    initialEditingImageRef.current = item.image || '';
+    initialEditingVideoRef.current = item.videoUrl || '';
     sessionUploadedImagesRef.current = [];
+    sessionUploadedVideosRef.current = [];
+    setUploadProgress(null);
+    setUploadStatusText('');
     const foundCat =
       categoriesList.find(
         (c) =>
@@ -596,7 +675,7 @@ export default function AdminPage() {
       subcategoryId: foundSub?.id || '',
       description: item.description || '',
       type: item.type,
-      image: item.type === 'photo' ? item.image || '' : '',
+      image: item.image || '',
       videoUrl: item.type === 'video' ? item.videoUrl || '' : '',
       status: item.status || 'published',
     });
@@ -604,8 +683,13 @@ export default function AdminPage() {
   };
 
   const handleUploadNewImage = async (file: File) => {
+    if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
+      showToast('GIF files are not allowed.');
+      return;
+    }
+
     if (!file.type.startsWith('image/')) {
-      showToast('Only image files (PNG, JPG, WEBP, AVIF, GIF, etc.) are allowed.');
+      showToast('Only image files (PNG, JPG, WEBP, AVIF) are allowed.');
       return;
     }
 
@@ -623,20 +707,37 @@ export default function AdminPage() {
         for (const tempUrl of sessionUploadedImagesRef.current) {
           if (tempUrl.includes('res.cloudinary.com')) {
             await deleteCloudinaryMedia(tempUrl);
+          } else if (isCloudflareR2Url(tempUrl)) {
+            await deleteR2Media(tempUrl);
           }
         }
         sessionUploadedImagesRef.current = [];
       }
 
-      const res = await uploadToCloudinary(file);
-      sessionUploadedImagesRef.current.push(res.url);
-      setContentFormData((prev) => ({ ...prev, image: res.url }));
-      showToast('Image uploaded successfully!');
+      // If in video mode, upload thumbnail to Cloudflare R2; otherwise photo to Cloudinary
+      let uploadedUrl = '';
+      if (contentFormData.type === 'video') {
+        setUploadStatusText('Uploading thumbnail to Cloudflare...');
+        const res = await uploadToR2(file);
+        uploadedUrl = res.url;
+      } else {
+        const res = await uploadToCloudinary(file);
+        uploadedUrl = res.url;
+      }
+
+      sessionUploadedImagesRef.current.push(uploadedUrl);
+      setContentFormData((prev) => ({ ...prev, image: uploadedUrl }));
+      showToast(
+        contentFormData.type === 'video'
+          ? 'Thumbnail uploaded to Cloudflare successfully!'
+          : 'Image uploaded successfully!'
+      );
     } catch (err: unknown) {
       const error = err as Error;
       showToast(error.message || 'Failed to upload image');
     } finally {
       setUploadingMedia(false);
+      setUploadStatusText('');
     }
   };
 
@@ -646,6 +747,8 @@ export default function AdminPage() {
     if (sessionUploadedImagesRef.current.includes(contentFormData.image)) {
       if (contentFormData.image.includes('res.cloudinary.com')) {
         await deleteCloudinaryMedia(contentFormData.image);
+      } else if (isCloudflareR2Url(contentFormData.image)) {
+        await deleteR2Media(contentFormData.image);
       }
       sessionUploadedImagesRef.current = sessionUploadedImagesRef.current.filter(
         (url) => url !== contentFormData.image
@@ -653,7 +756,109 @@ export default function AdminPage() {
     }
 
     setContentFormData((prev) => ({ ...prev, image: '' }));
-    showToast('Image removed.');
+    showToast('Image / Thumbnail removed.');
+  };
+
+  const handleUploadNewVideo = async (file: File) => {
+    if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|m4v|mkv)$/i)) {
+      showToast('Only video files (MP4, WebM, MOV, M4V, MKV) are allowed.');
+      return;
+    }
+
+    if (file.size > MAX_VIDEO_SIZE_BYTES) {
+      const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+      showToast(
+        `File size (${sizeInMb}MB) exceeds the 100MB limit for video upload.`
+      );
+      return;
+    }
+
+    setUploadingMedia(true);
+    setUploadProgress(0);
+    setUploadStatusText('Uploading video to Cloudflare...');
+
+    try {
+      // 1. Clean up previously uploaded video in this unconfirmed session
+      if (sessionUploadedVideosRef.current.length > 0) {
+        for (const tempUrl of sessionUploadedVideosRef.current) {
+          await deleteR2Media(tempUrl);
+        }
+        sessionUploadedVideosRef.current = [];
+      }
+
+      // 2. Also clean up any unconfirmed thumbnail previously uploaded in this session
+      if (sessionUploadedImagesRef.current.length > 0) {
+        for (const tempUrl of sessionUploadedImagesRef.current) {
+          if (tempUrl.includes('res.cloudinary.com')) {
+            await deleteCloudinaryMedia(tempUrl);
+          } else if (isCloudflareR2Url(tempUrl)) {
+            await deleteR2Media(tempUrl);
+          }
+        }
+        sessionUploadedImagesRef.current = [];
+      }
+
+      // 3. Upload video to Cloudflare R2
+      const res = await uploadToR2(file, (percent) => {
+        setUploadProgress(percent);
+      });
+
+      sessionUploadedVideosRef.current.push(res.url);
+      setContentFormData((prev) => ({
+        ...prev,
+        videoUrl: res.url,
+      }));
+
+      // 4. Auto-extract first frame as cover thumbnail and upload directly to Cloudflare R2
+      setUploadStatusText('Extracting cover thumbnail from video...');
+      try {
+        const thumbFile = await captureVideoFrame(file, 1);
+        setUploadStatusText('Uploading thumbnail to Cloudflare...');
+        const thumbRes = await uploadToR2(thumbFile);
+        sessionUploadedImagesRef.current.push(thumbRes.url);
+        setContentFormData((prev) => ({
+          ...prev,
+          image: thumbRes.url,
+        }));
+      } catch (frameErr) {
+        console.warn('Auto cover capture skipped:', frameErr);
+      }
+
+      showToast('Video and thumbnail uploaded successfully to Cloudflare!');
+    } catch (err: unknown) {
+      const error = err as Error;
+      showToast(error.message || 'Failed to upload video');
+    } finally {
+      setUploadingMedia(false);
+      setUploadProgress(null);
+      setUploadStatusText('');
+    }
+  };
+
+  const handleRemoveVideo = async () => {
+    if (!contentFormData.videoUrl) return;
+
+    if (sessionUploadedVideosRef.current.includes(contentFormData.videoUrl)) {
+      await deleteR2Media(contentFormData.videoUrl);
+      sessionUploadedVideosRef.current = sessionUploadedVideosRef.current.filter(
+        (url) => url !== contentFormData.videoUrl
+      );
+    }
+
+    // Also delete session uploaded thumbnail if it was generated in this session
+    if (contentFormData.image && sessionUploadedImagesRef.current.includes(contentFormData.image)) {
+      if (contentFormData.image.includes('res.cloudinary.com')) {
+        await deleteCloudinaryMedia(contentFormData.image);
+      } else if (isCloudflareR2Url(contentFormData.image)) {
+        await deleteR2Media(contentFormData.image);
+      }
+      sessionUploadedImagesRef.current = sessionUploadedImagesRef.current.filter(
+        (url) => url !== contentFormData.image
+      );
+    }
+
+    setContentFormData((prev) => ({ ...prev, videoUrl: '', image: '' }));
+    showToast('Video and thumbnail removed.');
   };
 
   const handleCloseContentModal = async () => {
@@ -665,11 +870,32 @@ export default function AdminPage() {
           } catch (err) {
             console.warn('Failed to clean up cancelled upload:', err);
           }
+        } else if (isCloudflareR2Url(uploadedUrl)) {
+          try {
+            await deleteR2Media(uploadedUrl);
+          } catch (err) {
+            console.warn('Failed to clean up cancelled R2 thumbnail upload:', err);
+          }
         }
       }
       sessionUploadedImagesRef.current = [];
     }
+
+    if (sessionUploadedVideosRef.current.length > 0) {
+      for (const uploadedUrl of sessionUploadedVideosRef.current) {
+        try {
+          await deleteR2Media(uploadedUrl);
+        } catch (err) {
+          console.warn('Failed to clean up cancelled video upload:', err);
+        }
+      }
+      sessionUploadedVideosRef.current = [];
+    }
+
     initialEditingImageRef.current = '';
+    initialEditingVideoRef.current = '';
+    setUploadProgress(null);
+    setUploadStatusText('');
     setIsContentModalOpen(false);
     setEditingItem(null);
   };
@@ -686,109 +912,99 @@ export default function AdminPage() {
 
     if (contentFormData.type === 'video') {
       finalVideoUrl = contentFormData.videoUrl.trim();
-      finalImage = getYouTubeThumbnail(finalVideoUrl) || '';
-      if (sessionUploadedImagesRef.current.length > 0) {
-        for (const tempUrl of sessionUploadedImagesRef.current) {
-          if (tempUrl.includes('res.cloudinary.com')) {
-            await deleteCloudinaryMedia(tempUrl);
+      const ytThumb = getYouTubeThumbnail(finalVideoUrl);
+      if (ytThumb) {
+        finalImage = ytThumb;
+        if (sessionUploadedImagesRef.current.length > 0) {
+          for (const tempUrl of sessionUploadedImagesRef.current) {
+            if (tempUrl.includes('res.cloudinary.com')) {
+              await deleteCloudinaryMedia(tempUrl);
+            } else if (isCloudflareR2Url(tempUrl)) {
+              await deleteR2Media(tempUrl);
+            }
           }
+          sessionUploadedImagesRef.current = [];
         }
-        sessionUploadedImagesRef.current = [];
+      } else {
+        // Direct video (Cloudflare R2 or direct MP4/WebM)
+        finalImage = contentFormData.image.trim() || (editingItem?.image?.trim() || '');
       }
     } else {
       finalVideoUrl = null;
       finalImage = contentFormData.image.trim();
     }
 
-    if (!finalImage) {
-      showToast(
-        contentFormData.type === 'video'
-          ? 'Please provide a valid YouTube link'
-          : 'Please upload an image file'
-      );
-      return;
-    }
-
-    const parentCat = categoriesList.find((c) => c.id === contentFormData.categoryId);
-    const selectedSub = parentCat?.subcategories.find((s) => s.id === contentFormData.subcategoryId);
-
-    let finalSubcatId = contentFormData.subcategoryId;
-    if (isSupabaseConfigured && supabase) {
-      const isSubcatUuid =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalSubcatId);
-      if (!isSubcatUuid) {
-        const subLabel = selectedSub?.label;
-        if (subLabel) {
-          const { data: foundDbSub } = await supabase
-            .from('subcategories')
-            .select('id')
-            .eq('label', subLabel)
-            .limit(1)
-            .maybeSingle();
-          if (foundDbSub?.id) finalSubcatId = foundDbSub.id;
-        }
-        if (
-          !finalSubcatId ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalSubcatId)
-        ) {
-          const { data: firstSub } = await supabase
-            .from('subcategories')
-            .select('id')
-            .limit(1)
-            .maybeSingle();
-          if (firstSub?.id) finalSubcatId = firstSub.id;
-        }
+    if (contentFormData.type === 'video') {
+      if (!finalVideoUrl) {
+        showToast('Please provide a video link or upload a video file.');
+        return;
+      }
+    } else {
+      if (!finalImage) {
+        showToast('Please upload an image file.');
+        return;
       }
     }
 
-    const payload = {
-      description: contentFormData.description.trim() || null,
-      subcategory_id: finalSubcatId,
-      image_url: finalImage,
-      type: contentFormData.type,
-      video_url: finalVideoUrl,
-      status: contentFormData.status,
-    };
+    setIsSavingContent(true);
+    try {
+      const parentCat = categoriesList.find((c) => c.id === contentFormData.categoryId);
+      const selectedSub = parentCat?.subcategories.find((s) => s.id === contentFormData.subcategoryId);
 
-    if (isSupabaseConfigured && supabase && finalSubcatId) {
-      try {
-        if (editingItem) {
-          const isItemUuid =
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-              editingItem.id
-            );
-
-          if (isItemUuid) {
-            const { error: updateError } = await supabase
-              .from('contents')
-              .update({
-                ...payload,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', editingItem.id);
-
-            if (updateError) {
-              console.error('Update error:', updateError);
-              showToast(`Failed to update: ${updateError.message}`);
-              return;
-            }
-            showToast('Work updated successfully.');
-          } else {
-            const { data: existingRow } = await supabase
-              .from('contents')
+      let finalSubcatId = contentFormData.subcategoryId;
+      if (isSupabaseConfigured && supabase) {
+        const isSubcatUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalSubcatId);
+        if (!isSubcatUuid) {
+          const subLabel = selectedSub?.label;
+          if (subLabel) {
+            const { data: foundDbSub } = await supabase
+              .from('subcategories')
               .select('id')
-              .eq('image_url', finalImage)
+              .eq('label', subLabel)
               .limit(1)
               .maybeSingle();
+            if (foundDbSub?.id) finalSubcatId = foundDbSub.id;
+          }
+          if (
+            !finalSubcatId ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalSubcatId)
+          ) {
+            const { data: firstSub } = await supabase
+              .from('subcategories')
+              .select('id')
+              .limit(1)
+              .maybeSingle();
+            if (firstSub?.id) finalSubcatId = firstSub.id;
+          }
+        }
+      }
 
-            if (existingRow?.id) {
+      const payload = {
+        description: contentFormData.description.trim() || null,
+        subcategory_id: finalSubcatId,
+        image_url: finalImage,
+        type: contentFormData.type,
+        video_url: finalVideoUrl,
+        status: contentFormData.status,
+      };
+
+      if (isSupabaseConfigured && supabase && finalSubcatId) {
+        try {
+          if (editingItem) {
+            const isItemUuid =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                editingItem.id
+              );
+
+            if (isItemUuid) {
               const { error: updateError } = await supabase
                 .from('contents')
                 .update({
                   ...payload,
                   updated_at: new Date().toISOString(),
                 })
-                .eq('id', existingRow.id);
+                .eq('id', editingItem.id);
 
               if (updateError) {
                 console.error('Update error:', updateError);
@@ -797,101 +1013,160 @@ export default function AdminPage() {
               }
               showToast('Work updated successfully.');
             } else {
-              const { error: insertError } = await supabase.from('contents').insert(payload);
-              if (insertError) {
-                console.error('Insert error:', insertError);
-                showToast(`Failed to save: ${insertError.message}`);
-                return;
+              const { data: existingRow } = await supabase
+                .from('contents')
+                .select('id')
+                .eq('image_url', finalImage)
+                .limit(1)
+                .maybeSingle();
+
+              if (existingRow?.id) {
+                const { error: updateError } = await supabase
+                  .from('contents')
+                  .update({
+                    ...payload,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', existingRow.id);
+
+                if (updateError) {
+                  console.error('Update error:', updateError);
+                  showToast(`Failed to update: ${updateError.message}`);
+                  return;
+                }
+                showToast('Work updated successfully.');
+              } else {
+                const { error: insertError } = await supabase.from('contents').insert(payload);
+                if (insertError) {
+                  console.error('Insert error:', insertError);
+                  showToast(`Failed to save: ${insertError.message}`);
+                  return;
+                }
+                showToast('Work saved successfully.');
               }
-              showToast('Work saved successfully.');
+            }
+          } else {
+            const { error: insertError } = await supabase.from('contents').insert(payload);
+            if (insertError) {
+              console.error('Insert error:', insertError);
+              showToast(`Failed to create work: ${insertError.message}`);
+              return;
+            }
+            showToast('New work created successfully.');
+          }
+
+          // Deferred delete of old replaced image/thumbnail on Save
+          if (
+            editingItem &&
+            initialEditingImageRef.current &&
+            initialEditingImageRef.current !== finalImage
+          ) {
+            try {
+              if (initialEditingImageRef.current.includes('res.cloudinary.com')) {
+                await deleteCloudinaryMedia(initialEditingImageRef.current);
+              } else if (isCloudflareR2Url(initialEditingImageRef.current)) {
+                await deleteR2Media(initialEditingImageRef.current);
+              }
+            } catch (err) {
+              console.warn('Failed to delete old image/thumbnail:', err);
             }
           }
-        } else {
-          const { error: insertError } = await supabase.from('contents').insert(payload);
-          if (insertError) {
-            console.error('Insert error:', insertError);
-            showToast(`Failed to create work: ${insertError.message}`);
-            return;
+
+          // Deferred delete of old replaced video on Save
+          if (
+            editingItem &&
+            initialEditingVideoRef.current &&
+            initialEditingVideoRef.current !== finalVideoUrl &&
+            isCloudflareR2Url(initialEditingVideoRef.current)
+          ) {
+            try {
+              await deleteR2Media(initialEditingVideoRef.current);
+            } catch (err) {
+              console.warn('Failed to delete old video from Cloudflare R2:', err);
+            }
           }
+
+          await loadDatabaseData();
+        } catch (err: unknown) {
+          const error = err as Error;
+          console.error('Save error:', error);
+          showToast(error.message || 'Error saving work');
+          return;
+        }
+      } else {
+        const savedItem: MediaItem = {
+          id: editingItem ? editingItem.id : `content-${Date.now()}`,
+          category: (parentCat?.label.toLowerCase().replace(/\s+/g, '-') ||
+            'photography') as MainCategory,
+          categoryLabel: parentCat?.label || 'Category',
+          subcategory: contentFormData.subcategoryId,
+          subcategoryLabel: selectedSub?.label || 'Work',
+          description: contentFormData.description,
+          type: contentFormData.type,
+          image: finalImage,
+          videoUrl: finalVideoUrl || undefined,
+          status: contentFormData.status,
+        };
+
+        if (editingItem) {
+          setItems((prev) => prev.map((i) => (i.id === editingItem.id ? savedItem : i)));
+          showToast('Work updated successfully.');
+        } else {
+          setItems((prev) => [savedItem, ...prev]);
           showToast('New work created successfully.');
         }
-
-        // Deferred delete of old Cloudinary image on Save
-        if (
-          editingItem &&
-          initialEditingImageRef.current &&
-          initialEditingImageRef.current !== finalImage &&
-          initialEditingImageRef.current.includes('res.cloudinary.com')
-        ) {
-          try {
-            await deleteCloudinaryMedia(initialEditingImageRef.current);
-          } catch (err) {
-            console.warn('Failed to delete old image from Cloudinary:', err);
-          }
-        }
-
-        await loadDatabaseData();
-      } catch (err: unknown) {
-        const error = err as Error;
-        console.error('Save error:', error);
-        showToast(error.message || 'Error saving work');
-        return;
       }
-    } else {
-      const savedItem: MediaItem = {
-        id: editingItem ? editingItem.id : `content-${Date.now()}`,
-        category: (parentCat?.label.toLowerCase().replace(/\s+/g, '-') ||
-          'photography') as MainCategory,
-        categoryLabel: parentCat?.label || 'Category',
-        subcategory: contentFormData.subcategoryId,
-        subcategoryLabel: selectedSub?.label || 'Work',
-        description: contentFormData.description,
-        type: contentFormData.type,
-        image: finalImage,
-        videoUrl: finalVideoUrl || undefined,
-        status: contentFormData.status,
-      };
 
-      if (editingItem) {
-        setItems((prev) => prev.map((i) => (i.id === editingItem.id ? savedItem : i)));
-        showToast('Work updated successfully.');
-      } else {
-        setItems((prev) => [savedItem, ...prev]);
-        showToast('New work created successfully.');
-      }
+      sessionUploadedImagesRef.current = [];
+      sessionUploadedVideosRef.current = [];
+      initialEditingImageRef.current = '';
+      initialEditingVideoRef.current = '';
+      setUploadProgress(null);
+      setUploadStatusText('');
+      setIsContentModalOpen(false);
+      setEditingItem(null);
+    } finally {
+      setIsSavingContent(false);
     }
-
-    sessionUploadedImagesRef.current = [];
-    initialEditingImageRef.current = '';
-    setIsContentModalOpen(false);
-    setEditingItem(null);
   };
 
   const handleDeleteContent = async () => {
     if (!deletingItem) return;
 
-    if (deletingItem.image && deletingItem.image.includes('res.cloudinary.com')) {
-      await deleteCloudinaryMedia(deletingItem.image);
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const isUuid =
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deletingItem.id);
-        if (isUuid) {
-          await supabase.from('contents').delete().eq('id', deletingItem.id);
-        } else {
-          await supabase.from('contents').delete().eq('image_url', deletingItem.image);
+    setIsDeletingContent(true);
+    try {
+      if (deletingItem.image) {
+        if (deletingItem.image.includes('res.cloudinary.com')) {
+          await deleteCloudinaryMedia(deletingItem.image);
+        } else if (isCloudflareR2Url(deletingItem.image)) {
+          await deleteR2Media(deletingItem.image);
         }
-        await loadDatabaseData();
-      } catch (err) {
-        console.warn('Content delete notice:', err);
       }
-    }
+      if (deletingItem.videoUrl && isCloudflareR2Url(deletingItem.videoUrl)) {
+        await deleteR2Media(deletingItem.videoUrl);
+      }
 
-    setItems((prev) => prev.filter((i) => i.id !== deletingItem.id));
-    setDeletingItem(null);
-    showToast('Work removed successfully.');
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deletingItem.id);
+          if (isUuid) {
+            await supabase.from('contents').delete().eq('id', deletingItem.id);
+          } else {
+            await supabase.from('contents').delete().eq('image_url', deletingItem.image);
+          }
+          await loadDatabaseData();
+        } catch (err) {
+          console.warn('Content delete notice:', err);
+        }
+      }
+
+      setItems((prev) => prev.filter((i) => i.id !== deletingItem.id));
+      setDeletingItem(null);
+      showToast('Work removed successfully.');
+    } finally {
+      setIsDeletingContent(false);
+    }
   };
 
   // Category CRUD Handlers
@@ -915,73 +1190,78 @@ export default function AdminPage() {
     e.preventDefault();
     if (!categoryFormData.label.trim()) return;
 
-    if (categoryModalMode === 'create') {
-      const alreadyExists = categoriesList.some(
-        (c) => c.label.toLowerCase() === categoryFormData.label.trim().toLowerCase()
-      );
-      if (alreadyExists) {
-        showToast(`Category "${categoryFormData.label}" already exists.`);
-        return;
-      }
-
-      let newId = `cat-${Date.now()}`;
-      if (isSupabaseConfigured && supabase) {
-        try {
-          const { data } = await supabase
-            .from('categories')
-            .insert({
-              label: categoryFormData.label.trim(),
-              description: categoryFormData.description.trim() || null,
-            })
-            .select()
-            .single();
-          if (data?.id) newId = data.id;
-        } catch (err) {
-          console.warn('Category insert notice:', err);
+    setIsSavingCategory(true);
+    try {
+      if (categoryModalMode === 'create') {
+        const alreadyExists = categoriesList.some(
+          (c) => c.label.toLowerCase() === categoryFormData.label.trim().toLowerCase()
+        );
+        if (alreadyExists) {
+          showToast(`Category "${categoryFormData.label}" already exists.`);
+          return;
         }
-      }
 
-      const newCategory: AdminCategory = {
-        id: newId,
-        label: categoryFormData.label.trim(),
-        description: categoryFormData.description.trim(),
-        subcategories: [],
-      };
-      setCategoriesList((prev) => [...prev, newCategory]);
-      showToast(`Category "${categoryFormData.label}" created.`);
-    } else {
-      if (isSupabaseConfigured && supabase) {
-        try {
-          if (categoryFormData.id && !categoryFormData.id.startsWith('cat-')) {
-            await supabase
+        let newId = `cat-${Date.now()}`;
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const { data } = await supabase
               .from('categories')
-              .update({
+              .insert({
                 label: categoryFormData.label.trim(),
                 description: categoryFormData.description.trim() || null,
-                updated_at: new Date().toISOString(),
               })
-              .eq('id', categoryFormData.id);
+              .select()
+              .single();
+            if (data?.id) newId = data.id;
+          } catch (err) {
+            console.warn('Category insert notice:', err);
           }
-        } catch (err) {
-          console.warn('Category update notice:', err);
         }
+
+        const newCategory: AdminCategory = {
+          id: newId,
+          label: categoryFormData.label.trim(),
+          description: categoryFormData.description.trim(),
+          subcategories: [],
+        };
+        setCategoriesList((prev) => [...prev, newCategory]);
+        showToast(`Category "${categoryFormData.label}" created.`);
+      } else {
+        if (isSupabaseConfigured && supabase) {
+          try {
+            if (categoryFormData.id && !categoryFormData.id.startsWith('cat-')) {
+              await supabase
+                .from('categories')
+                .update({
+                  label: categoryFormData.label.trim(),
+                  description: categoryFormData.description.trim() || null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', categoryFormData.id);
+            }
+          } catch (err) {
+            console.warn('Category update notice:', err);
+          }
+        }
+
+        setCategoriesList((prev) =>
+          prev.map((c) =>
+            c.id === categoryFormData.id
+              ? {
+                  ...c,
+                  label: categoryFormData.label.trim(),
+                  description: categoryFormData.description.trim(),
+                }
+              : c
+          )
+        );
+        showToast(`Category "${categoryFormData.label}" updated.`);
       }
 
-      setCategoriesList((prev) =>
-        prev.map((c) =>
-          c.id === categoryFormData.id
-            ? {
-                ...c,
-                label: categoryFormData.label.trim(),
-                description: categoryFormData.description.trim(),
-              }
-            : c
-        )
-      );
-      showToast(`Category "${categoryFormData.label}" updated.`);
+      setIsCategoryModalOpen(false);
+    } finally {
+      setIsSavingCategory(false);
     }
-
-    setIsCategoryModalOpen(false);
   };
 
   const handleDeleteCategory = async () => {
@@ -1081,90 +1361,95 @@ export default function AdminPage() {
       return;
     }
 
-    if (subcategoryModalMode === 'create') {
-      const alreadyExists = parentCat.subcategories.some(
-        (s) => s.label.toLowerCase() === subcategoryFormData.label.trim().toLowerCase()
-      );
-      if (alreadyExists) {
-        showToast(`Subcategory "${subcategoryFormData.label}" already exists in this category.`);
-        return;
-      }
-
-      let newId = `sub-${Date.now()}`;
-      if (isSupabaseConfigured && supabase) {
-        try {
-          const parentCatId = parentCat.id;
-          if (parentCatId && !parentCatId.startsWith('cat-')) {
-            const { data } = await supabase
-              .from('subcategories')
-              .insert({
-                category_id: parentCatId,
-                label: subcategoryFormData.label.trim(),
-                description: subcategoryFormData.description.trim() || null,
-              })
-              .select()
-              .single();
-            if (data?.id) newId = data.id;
-          }
-        } catch (err) {
-          console.warn('Subcategory insert notice:', err);
+    setIsSavingSubcategory(true);
+    try {
+      if (subcategoryModalMode === 'create') {
+        const alreadyExists = parentCat.subcategories.some(
+          (s) => s.label.toLowerCase() === subcategoryFormData.label.trim().toLowerCase()
+        );
+        if (alreadyExists) {
+          showToast(`Subcategory "${subcategoryFormData.label}" already exists in this category.`);
+          return;
         }
-      }
 
-      const newSub: AdminSubCategory = {
-        id: newId,
-        label: subcategoryFormData.label.trim(),
-        description: subcategoryFormData.description.trim(),
-      };
-
-      setCategoriesList((prev) =>
-        prev.map((c) =>
-          c.id === parentCat.id ? { ...c, subcategories: [...c.subcategories, newSub] } : c
-        )
-      );
-      showToast(`Subcategory "${subcategoryFormData.label}" added successfully.`);
-    } else {
-      if (isSupabaseConfigured && supabase) {
-        try {
-          if (subcategoryFormData.id && !subcategoryFormData.id.startsWith('sub-')) {
-            await supabase
-              .from('subcategories')
-              .update({
-                label: subcategoryFormData.label.trim(),
-                description: subcategoryFormData.description.trim() || null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', subcategoryFormData.id);
-          }
-        } catch (err) {
-          console.warn('Subcategory update notice:', err);
-        }
-      }
-
-      setCategoriesList((prev) =>
-        prev.map((c) => {
-          const filteredSubs = c.subcategories.filter((s) => s.id !== subcategoryFormData.id);
-          if (c.id === subcategoryFormData.categoryId) {
-            return {
-              ...c,
-              subcategories: [
-                ...filteredSubs,
-                {
-                  id: subcategoryFormData.id,
+        let newId = `sub-${Date.now()}`;
+        if (isSupabaseConfigured && supabase) {
+          try {
+            const parentCatId = parentCat.id;
+            if (parentCatId && !parentCatId.startsWith('cat-')) {
+              const { data } = await supabase
+                .from('subcategories')
+                .insert({
+                  category_id: parentCatId,
                   label: subcategoryFormData.label.trim(),
-                  description: subcategoryFormData.description.trim(),
-                },
-              ],
-            };
+                  description: subcategoryFormData.description.trim() || null,
+                })
+                .select()
+                .single();
+              if (data?.id) newId = data.id;
+            }
+          } catch (err) {
+            console.warn('Subcategory insert notice:', err);
           }
-          return { ...c, subcategories: filteredSubs };
-        })
-      );
+        }
 
-      showToast(`Subcategory "${subcategoryFormData.label}" updated successfully.`);
+        const newSub: AdminSubCategory = {
+          id: newId,
+          label: subcategoryFormData.label.trim(),
+          description: subcategoryFormData.description.trim(),
+        };
+
+        setCategoriesList((prev) =>
+          prev.map((c) =>
+            c.id === parentCat.id ? { ...c, subcategories: [...c.subcategories, newSub] } : c
+          )
+        );
+        showToast(`Subcategory "${subcategoryFormData.label}" added successfully.`);
+      } else {
+        if (isSupabaseConfigured && supabase) {
+          try {
+            if (subcategoryFormData.id && !subcategoryFormData.id.startsWith('sub-')) {
+              await supabase
+                .from('subcategories')
+                .update({
+                  label: subcategoryFormData.label.trim(),
+                  description: subcategoryFormData.description.trim() || null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', subcategoryFormData.id);
+            }
+          } catch (err) {
+            console.warn('Subcategory update notice:', err);
+          }
+        }
+
+        setCategoriesList((prev) =>
+          prev.map((c) => {
+            const filteredSubs = c.subcategories.filter((s) => s.id !== subcategoryFormData.id);
+            if (c.id === subcategoryFormData.categoryId) {
+              return {
+                ...c,
+                subcategories: [
+                  ...filteredSubs,
+                  {
+                    id: subcategoryFormData.id,
+                    label: subcategoryFormData.label.trim(),
+                    description: subcategoryFormData.description.trim(),
+                  },
+                ],
+              };
+            }
+            return { ...c, subcategories: filteredSubs };
+          })
+        );
+
+        showToast(`Subcategory "${subcategoryFormData.label}" updated successfully.`);
+      }
+
+      setIsSubcategoryModalOpen(false);
+    } finally {
+      setIsSavingSubcategory(false);
     }
-
-    setIsSubcategoryModalOpen(false);
   };
 
   const handleDeleteSubcategory = async () => {
@@ -1258,11 +1543,7 @@ export default function AdminPage() {
       contentFormData.subcategoryId &&
       !uploadingMedia &&
       (contentFormData.type === 'video'
-        ? Boolean(
-            contentFormData.videoUrl &&
-              contentFormData.videoUrl.trim() &&
-              getYouTubeThumbnail(contentFormData.videoUrl.trim())
-          )
+        ? Boolean(contentFormData.videoUrl && contentFormData.videoUrl.trim())
         : Boolean(
             contentFormData.image &&
               contentFormData.image.trim() &&
@@ -1296,7 +1577,7 @@ export default function AdminPage() {
       <input
         type="file"
         ref={replaceFileInputRef}
-        accept="image/*"
+        accept="image/png,image/jpeg,image/webp,image/avif"
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) handleUploadNewImage(file);
@@ -1349,6 +1630,7 @@ export default function AdminPage() {
               onToggleSelectItem={handleToggleSelectItem}
               onToggleSelectAll={handleToggleSelectAll}
               onOpenCreateContent={openCreateContentModal}
+              onOpenBulkInsert={() => setIsBulkInsertModalOpen(true)}
               onOpenEditContent={openEditContentModal}
               onOpenDeleteContent={setDeletingItem}
               onOpenBulkEdit={openBulkEditModal}
@@ -1382,12 +1664,17 @@ export default function AdminPage() {
         setContentFormData={setContentFormData}
         categoriesList={categoriesList}
         uploadingMedia={uploadingMedia}
+        isSaving={isSavingContent}
         isContentFormValid={isContentFormValid}
+        uploadProgress={uploadProgress}
+        uploadStatusText={uploadStatusText}
         onClose={handleCloseContentModal}
         onSubmit={handleSaveContent}
         onUploadNewImage={handleUploadNewImage}
         onRemoveImage={handleRemoveImage}
         onTriggerReplaceImage={() => replaceFileInputRef.current?.click()}
+        onUploadNewVideo={handleUploadNewVideo}
+        onRemoveVideo={handleRemoveVideo}
       />
 
       <CategoryModals
@@ -1395,6 +1682,7 @@ export default function AdminPage() {
         categoryModalMode={categoryModalMode}
         categoryFormData={categoryFormData}
         setCategoryFormData={setCategoryFormData}
+        isSavingCategory={isSavingCategory}
         onCloseCategoryModal={() => setIsCategoryModalOpen(false)}
         onSaveCategory={handleSaveCategory}
         isSubcategoryModalOpen={isSubcategoryModalOpen}
@@ -1402,6 +1690,7 @@ export default function AdminPage() {
         subcategoryFormData={subcategoryFormData}
         setSubcategoryFormData={setSubcategoryFormData}
         categoriesList={categoriesList}
+        isSavingSubcategory={isSavingSubcategory}
         onCloseSubcategoryModal={() => setIsSubcategoryModalOpen(false)}
         onSaveSubcategory={handleSaveSubcategory}
         deletingCategory={deletingCategory}
@@ -1429,8 +1718,19 @@ export default function AdminPage() {
         onConfirmBulkDelete={handleBulkDelete}
       />
 
+      <BulkInsertModal
+        isOpen={isBulkInsertModalOpen}
+        categoriesList={categoriesList}
+        onClose={() => setIsBulkInsertModalOpen(false)}
+        onSuccess={async () => {
+          await loadDatabaseData();
+        }}
+        showToast={showToast}
+      />
+
       <DeleteContentModal
         deletingItem={deletingItem}
+        isDeleting={isDeletingContent}
         onClose={() => setDeletingItem(null)}
         onConfirm={handleDeleteContent}
       />
