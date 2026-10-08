@@ -4,8 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, RefreshCw } from 'lucide-react';
 import {
-  portfolioItems as initialPortfolioItems,
-  CATEGORIES,
   MainCategory,
   MediaItem,
   getYouTubeThumbnail,
@@ -44,7 +42,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [items, setItems] = useState<MediaItem[]>(initialPortfolioItems);
+  const [items, setItems] = useState<MediaItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -54,18 +52,7 @@ export default function AdminPage() {
   const [currentUser, setCurrentUser] = useState<{ email?: string; id?: string } | null>(null);
 
   // Categories & Subcategories State
-  const [categoriesList, setCategoriesList] = useState<AdminCategory[]>(
-    CATEGORIES.map((c, catIdx) => ({
-      id: `cat-${catIdx + 1}`,
-      label: c.label,
-      description: c.description,
-      subcategories: c.subcategories.map((s, subIdx) => ({
-        id: `sub-${catIdx + 1}-${subIdx + 1}`,
-        label: s.label,
-        description: s.description,
-      })),
-    }))
-  );
+  const [categoriesList, setCategoriesList] = useState<AdminCategory[]>([]);
 
   // Bulk Selection & Action State
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -202,7 +189,7 @@ export default function AdminPage() {
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (catRows && catRows.length > 0) {
+      if (catRows) {
         const structured: AdminCategory[] = catRows.map((cat) => ({
           id: cat.id,
           label: cat.label,
@@ -216,6 +203,8 @@ export default function AdminPage() {
             })),
         }));
         setCategoriesList(structured);
+      } else {
+        setCategoriesList([]);
       }
 
       // 3. Fetch contents
@@ -241,7 +230,7 @@ export default function AdminPage() {
         `)
         .order('created_at', { ascending: false });
 
-      if (dbContents && dbContents.length > 0) {
+      if (dbContents) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mapped: MediaItem[] = dbContents.map((d: any) => ({
           id: d.id,
@@ -257,6 +246,8 @@ export default function AdminPage() {
           status: (d.status || 'published') as 'draft' | 'published' | 'archived',
         }));
         setItems(mapped);
+      } else {
+        setItems([]);
       }
     } catch (err) {
       console.warn('Sync notice:', err);
@@ -559,6 +550,10 @@ export default function AdminPage() {
 
   // Content Modal Handlers
   const openCreateContentModal = () => {
+    if (categoriesList.length === 0) {
+      showToast('Please create a category first before adding works.');
+      return;
+    }
     setEditingItem(null);
     initialEditingImageRef.current = '';
     sessionUploadedImagesRef.current = [];
@@ -1050,6 +1045,10 @@ export default function AdminPage() {
 
   // Subcategory CRUD Handlers
   const openCreateSubcategoryModal = (parentCatId?: string) => {
+    if (categoriesList.length === 0) {
+      showToast('Please create a category first before adding subcategories.');
+      return;
+    }
     setSubcategoryModalMode('create');
     const targetCatId = parentCatId || categoriesList[0]?.id || '';
     setSubcategoryFormData({

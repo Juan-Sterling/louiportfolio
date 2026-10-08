@@ -10,8 +10,6 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import {
-  portfolioItems as fallbackPortfolioItems,
-  CATEGORIES as fallbackCategories,
   MediaItem,
   getYouTubeThumbnail,
 } from '@/data/portfolioData';
@@ -226,21 +224,10 @@ export default function ModernGallery({
   const [hasMounted, setHasMounted] = useState<boolean>(false);
   const [isInitialEntrance, setIsInitialEntrance] = useState<boolean>(true);
   const [items, setItems] = useState<MediaItem[]>(
-    initialItems && initialItems.length > 0 ? initialItems : fallbackPortfolioItems
+    initialItems && initialItems.length > 0 ? initialItems : []
   );
   const [categories, setCategories] = useState<GalleryCategory[]>(
-    initialCategories && initialCategories.length > 0
-      ? initialCategories
-      : fallbackCategories.map((c) => ({
-        id: c.key,
-        label: c.label,
-        description: c.description,
-        subcategories: c.subcategories.map((s) => ({
-          id: s.key,
-          label: s.label,
-          description: s.description,
-        })),
-      }))
+    initialCategories && initialCategories.length > 0 ? initialCategories : []
   );
 
   const ITEMS_PER_PAGE = 12;
@@ -368,7 +355,7 @@ export default function ModernGallery({
           .order('created_at', { ascending: false });
 
         // Map categories & subcategories
-        if (catData && catData.length > 0) {
+        if (catData) {
           const structuredCats: GalleryCategory[] = catData.map((c) => ({
             id: c.id,
             label: c.label,
@@ -382,28 +369,25 @@ export default function ModernGallery({
               })),
           }));
           setCategories(structuredCats);
+        } else {
+          setCategories([]);
         }
 
         // Map contents into MediaItem format
-        if (contentData && contentData.length > 0) {
+        if (contentData) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const mappedItems: MediaItem[] = contentData.map((d: any) => {
-            const fallback = fallbackPortfolioItems.find(
-              (f) => f.id === d.id || f.image === d.image_url
-            );
-            return {
-              id: d.id,
-              category: (d.subcategories?.categories?.id || 'photography') as any,
-              categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
-              subcategory: d.subcategories?.id || d.subcategory_id,
-              subcategoryLabel: d.subcategories?.label || 'Portfolio',
-              description: d.description || '',
-              type: (d.type || 'photo') as 'photo' | 'video',
-              image: d.image_url,
-              videoUrl: d.video_url || undefined,
-              aspect: fallback?.aspect || undefined,
-            };
-          });
+          const mappedItems: MediaItem[] = contentData.map((d: any) => ({
+            id: d.id,
+            category: (d.subcategories?.categories?.id || 'photography') as any,
+            categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
+            subcategory: d.subcategories?.id || d.subcategory_id,
+            subcategoryLabel: d.subcategories?.label || 'Portfolio',
+            description: d.description || '',
+            type: (d.type || 'photo') as 'photo' | 'video',
+            image: d.image_url,
+            videoUrl: d.video_url || undefined,
+            aspect: undefined,
+          }));
           setItems(mappedItems);
         }
       } catch (err) {

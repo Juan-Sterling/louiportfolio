@@ -1,9 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import {
-  portfolioItems as fallbackPortfolioItems,
-  CATEGORIES as fallbackCategories,
-  MediaItem,
-} from '@/data/portfolioData';
+import { MediaItem } from '@/data/portfolioData';
 
 export interface GalleryCategory {
   id: string;
@@ -20,21 +16,10 @@ export async function getGalleryData(): Promise<{
   categories: GalleryCategory[];
   items: MediaItem[];
 }> {
-  const defaultCategories: GalleryCategory[] = fallbackCategories.map((c) => ({
-    id: c.key,
-    label: c.label,
-    description: c.description,
-    subcategories: c.subcategories.map((s) => ({
-      id: s.key,
-      label: s.label,
-      description: s.description,
-    })),
-  }));
-
   if (!isSupabaseConfigured || !supabase) {
     return {
-      categories: defaultCategories,
-      items: fallbackPortfolioItems,
+      categories: [],
+      items: [],
     };
   }
 
@@ -79,18 +64,18 @@ export async function getGalleryData(): Promise<{
       .order('created_at', { ascending: false });
 
     if (catError || subError || contentError) {
-      console.warn('Supabase fetch notice, falling back:', {
+      console.warn('Supabase fetch notice, returning available data:', {
         catError,
         subError,
         contentError,
       });
       return {
-        categories: defaultCategories,
-        items: fallbackPortfolioItems,
+        categories: [],
+        items: [],
       };
     }
 
-    let categories = defaultCategories;
+    let categories: GalleryCategory[] = [];
     if (catData && catData.length > 0) {
       categories = catData.map((c) => ({
         id: c.id,
@@ -106,26 +91,21 @@ export async function getGalleryData(): Promise<{
       }));
     }
 
-    let items = fallbackPortfolioItems;
+    let items: MediaItem[] = [];
     if (contentData && contentData.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      items = contentData.map((d: any) => {
-        const fallback = fallbackPortfolioItems.find(
-          (f) => f.id === d.id || f.image === d.image_url
-        );
-        return {
-          id: d.id,
-          category: (d.subcategories?.categories?.id || 'photography') as any,
-          categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
-          subcategory: d.subcategories?.id || d.subcategory_id,
-          subcategoryLabel: d.subcategories?.label || 'Portfolio',
-          description: d.description || '',
-          type: (d.type || 'photo') as 'photo' | 'video',
-          image: d.image_url,
-          videoUrl: d.video_url || undefined,
-          aspect: fallback?.aspect || undefined,
-        };
-      });
+      items = contentData.map((d: any) => ({
+        id: d.id,
+        category: (d.subcategories?.categories?.id || 'photography') as any,
+        categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
+        subcategory: d.subcategories?.id || d.subcategory_id,
+        subcategoryLabel: d.subcategories?.label || 'Portfolio',
+        description: d.description || '',
+        type: (d.type || 'photo') as 'photo' | 'video',
+        image: d.image_url,
+        videoUrl: d.video_url || undefined,
+        aspect: d.aspect || undefined,
+      }));
     }
 
     return {
@@ -135,8 +115,8 @@ export async function getGalleryData(): Promise<{
   } catch (err) {
     console.error('Error fetching gallery data from Supabase:', err);
     return {
-      categories: defaultCategories,
-      items: fallbackPortfolioItems,
+      categories: [],
+      items: [],
     };
   }
 }

@@ -119,11 +119,15 @@ export default function BulkModals({
                         }}
                         className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none"
                       >
-                        {categoriesList.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.label}
-                          </option>
-                        ))}
+                        {categoriesList.length === 0 ? (
+                          <option value="">(No categories available)</option>
+                        ) : (
+                          categoriesList.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.label}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
 
