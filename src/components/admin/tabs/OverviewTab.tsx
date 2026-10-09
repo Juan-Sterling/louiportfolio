@@ -6,6 +6,7 @@ import { ArrowUpRight, Play } from 'lucide-react';
 import { AdminCategory } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
 import { resolveVideoPlayUrl } from '@/lib/r2';
+import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 
 interface OverviewTabProps {
   items: MediaItem[];
@@ -250,7 +251,9 @@ export default function OverviewTab({
                 (item.image && typeof item.image === 'string' && item.image.trim() !== ''
                   ? item.image
                   : getYouTubeThumbnail(item.videoUrl)) || FALLBACK_POSTER;
-              const itemThumbnail = resolveVideoPlayUrl(rawThumb);
+              const itemThumbnail = getOptimizedCloudinaryUrl(resolveVideoPlayUrl(rawThumb), {
+                width: 600,
+              });
 
               return (
                 <div

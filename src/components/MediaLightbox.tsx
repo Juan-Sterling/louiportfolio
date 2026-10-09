@@ -21,6 +21,7 @@ import {
   isYouTubeUrl,
 } from '@/data/portfolioData';
 import { resolveVideoPlayUrl } from '@/lib/r2';
+import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 
 interface MediaLightboxProps {
   items: MediaItem[];
@@ -1122,7 +1123,7 @@ export default function MediaLightbox({
                 prevItemRef.current?.type !== 'video' && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                     <Image
-                      src={activeLoadedSrc}
+                      src={getOptimizedCloudinaryUrl(activeLoadedSrc, { width: 2400 })}
                       alt=""
                       fill
                       priority
@@ -1137,7 +1138,7 @@ export default function MediaLightbox({
               {/* Active High-Performance Image */}
               <div className="relative w-full h-full flex items-center justify-center z-10">
                 <Image
-                  src={currentItem.image}
+                  src={getOptimizedCloudinaryUrl(currentItem.image, { width: 2400 })}
                   alt={currentItem.subcategoryLabel || 'Portfolio Image'}
                   fill
                   priority
@@ -1191,7 +1192,9 @@ export default function MediaLightbox({
                   item.type === 'video' && item.videoUrl
                     ? getYouTubeThumbnail(item.videoUrl) || item.image
                     : item.image;
-                const thumb = resolveVideoPlayUrl(rawThumb);
+                const thumb = getOptimizedCloudinaryUrl(resolveVideoPlayUrl(rawThumb), {
+                  width: 160,
+                });
                 const isActive = idx === currentIndex;
 
                 return (

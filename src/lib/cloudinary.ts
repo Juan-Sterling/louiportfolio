@@ -141,3 +141,68 @@ export async function deleteCloudinaryMedia(
   }
 }
 
+/**
+ * Generates an optimized Cloudinary delivery URL with automatic modern format (WebP/AVIF),
+ * automatic visual quality compression, and responsive resizing.
+ * Transforms an 8-10MB raw PNG down to ~150-300KB without visible loss of quality.
+ */
+export function getOptimizedCloudinaryUrl(
+  url?: string,
+  options?: {
+    width?: number;
+    height?: number;
+    crop?: 'fill' | 'fit' | 'limit' | 'scale' | 'thumb';
+    quality?: 'auto' | 'auto:good' | 'auto:best' | 'auto:eco' | number;
+    format?: 'auto' | 'webp' | 'avif' | 'jpg' | 'png';
+  }
+): string {
+  if (!url || typeof url !== 'string' || !url.includes('res.cloudinary.com')) {
+    return url || '';
+  }
+
+  try {
+    const uploadIndex = url.indexOf('/upload/');
+    if (uploadIndex === -1) return url;
+
+    const prefix = url.substring(0, uploadIndex + 8); // includes '/upload/'
+    const rest = url.substring(uploadIndex + 8);
+
+    // Build transformation string
+    const transforms: string[] = [];
+    const format = options?.format || 'auto';
+    const quality = options?.quality || 'auto';
+    transforms.push(`f_${format}`, `q_${quality}`);
+
+    if (options?.width) {
+      transforms.push(`w_${options.width}`);
+    }
+    if (options?.height) {
+      transforms.push(`h_${options.height}`);
+    }
+    if (options?.crop) {
+      transforms.push(`c_${options.crop}`);
+    } else if (options?.width || options?.height) {
+      // Default to c_limit so it scales down large images but does not upscale small ones
+      transforms.push('c_limit');
+    }
+
+    const transformStr = transforms.join(',');
+
+    // Check if rest already starts with transformations
+    const segments = rest.split('/');
+    if (
+      segments.length > 0 &&
+      !/^v\d+$/.test(segments[0]) &&
+      (segments[0].includes('_') || segments[0].includes(','))
+    ) {
+      // Replace existing transformation segment
+      segments[0] = transformStr;
+      return `${prefix}${segments.join('/')}`;
+    }
+
+    return `${prefix}${transformStr}/${rest}`;
+  } catch {
+    return url;
+  }
+}
+

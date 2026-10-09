@@ -232,7 +232,9 @@ export default function ModernGallery({
 
   const ITEMS_PER_PAGE = 12;
   const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
-  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [activeCategory, setActiveCategory] = useState<string>(
+    initialCategories && initialCategories.length > 0 ? initialCategories[0].id : ''
+  );
   const [activeSubcategory, setActiveSubcategory] = useState<string>('all');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
@@ -249,6 +251,12 @@ export default function ModernGallery({
   useEffect(() => {
     if (initialCategories && initialCategories.length > 0) {
       setCategories(initialCategories);
+      setActiveCategory((prev) => {
+        if (!prev || prev === 'all' || !initialCategories.some((c) => c.id === prev)) {
+          return initialCategories[0].id;
+        }
+        return prev;
+      });
     }
   }, [initialCategories]);
 
@@ -394,6 +402,12 @@ export default function ModernGallery({
               })),
           }));
           setCategories(structuredCats);
+          setActiveCategory((prev) => {
+            if (!prev || prev === 'all' || !structuredCats.some((c) => c.id === prev)) {
+              return structuredCats[0].id;
+            }
+            return prev;
+          });
         } else {
           setCategories([]);
         }
@@ -428,10 +442,10 @@ export default function ModernGallery({
     fetchDatabaseData();
   }, []);
 
-  // Currently active Category Object
+  // Currently active Category Object (defaults to activeCategory or first available category)
   const activeCategoryObj = useMemo(() => {
-    if (activeCategory === 'all') return null;
-    return categories.find((c) => c.id === activeCategory) || null;
+    if (!categories || categories.length === 0) return null;
+    return categories.find((c) => c.id === activeCategory) || categories[0];
   }, [activeCategory, categories]);
 
   // Available subcategories for currently active category
@@ -458,10 +472,13 @@ export default function ModernGallery({
   const filteredItems = useMemo(() => {
     let result: MediaItem[] = items;
 
-    if (activeCategory !== 'all') {
+    // Filter by active category (or first category if not yet set)
+    const currentCatId = activeCategory || (categories.length > 0 ? categories[0].id : null);
+
+    if (currentCatId) {
       result = result.filter(
         (item) =>
-          item.category === activeCategory ||
+          item.category === currentCatId ||
           (activeCategoryObj && item.categoryLabel === activeCategoryObj.label)
       );
     }
@@ -479,7 +496,7 @@ export default function ModernGallery({
     // Newest work is always at top-left, while remaining works are pseudo-randomly
     // distributed across columns so videos, photos, and subcategories never clump!
     return distributeGalleryItemsBalanced(result);
-  }, [items, activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
+  }, [items, activeCategory, categories, activeCategoryObj, activeSubcategory, currentSubcategories]);
 
 
 
@@ -575,6 +592,8 @@ export default function ModernGallery({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
+              {/* SEMENTARA DISEMBUNYIKAN: Filter 'All Works' (Dapat diaktifkan kembali jika diperlukan) */}
+              {/*
               <button
                 onClick={() => handleSelectCategory('all')}
                 className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider px-4 py-2.5 rounded-full transition-all duration-300 ${activeCategory === 'all'
@@ -592,6 +611,7 @@ export default function ModernGallery({
                   {items.length}
                 </span>
               </button>
+              */}
 
               {categories.map((cat) => {
                 const count = items.filter(
@@ -715,7 +735,7 @@ export default function ModernGallery({
             </div>
 
             {/* Clean Shimmering Masonry Skeleton */}
-            <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]">
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7">
               {[
                 'aspect-[4/5]',
                 'aspect-[16/9]',
@@ -778,10 +798,10 @@ export default function ModernGallery({
             <>
               <div
                 key={`${activeCategory}-${activeSubcategory}`}
-                className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 [column-fill:_balance]"
+                className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7"
               >
                 {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
-                {activeCategory !== 'all' && (
+                {activeCategoryObj && (
                   <div
                     className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
                     style={{

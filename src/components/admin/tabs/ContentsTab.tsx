@@ -19,6 +19,7 @@ import {
 import { AdminCategory } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
 import { resolveVideoPlayUrl } from '@/lib/r2';
+import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 
 interface ContentsTabProps {
   items: MediaItem[];
@@ -290,9 +291,12 @@ export default function ContentsTab({
                         <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
                           <Image
                             src={
-                              (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                              getYouTubeThumbnail(item.videoUrl) ||
-                              'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>'
+                              getOptimizedCloudinaryUrl(
+                                (item.image ? resolveVideoPlayUrl(item.image) : '') ||
+                                getYouTubeThumbnail(item.videoUrl) ||
+                                'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
+                                { width: 160 }
+                              )
                             }
                             alt={item.subcategoryLabel}
                             fill
