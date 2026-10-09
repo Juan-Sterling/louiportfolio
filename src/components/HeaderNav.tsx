@@ -23,7 +23,32 @@ export default function HeaderNav() {
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault();
     const elem = document.getElementById(id);
-    if (elem) {
+    if (!elem) return;
+
+    if (id === 'contact') {
+      // Gulir langsung ke kontak (footer)
+      elem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      // Memastikan window benar-benar mendarat di footer contact
+      // jika ada konten/media yang masih menyelesaikan render atau tinggi halaman berubah saat scroll
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        const target = document.getElementById('contact');
+        if (target) {
+          const rect = target.getBoundingClientRect();
+          // Jika posisi atas footer masih jauh di bawah viewport (belum terjangkau)
+          if (rect.top > 120) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            clearInterval(interval);
+          }
+        }
+        if (attempts >= 10) {
+          clearInterval(interval);
+        }
+      }, 200);
+    } else {
       elem.scrollIntoView({ behavior: 'smooth' });
     }
   };

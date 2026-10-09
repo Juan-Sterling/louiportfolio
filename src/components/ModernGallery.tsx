@@ -12,8 +12,11 @@ import {
 import {
   MediaItem,
   getYouTubeThumbnail,
+  getYouTubeVideoId,
 } from '@/data/portfolioData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { resolveVideoPlayUrl } from '@/lib/r2';
+import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 import MediaLightbox from './MediaLightbox';
 import GalleryCard from './GalleryCard';
 
@@ -74,7 +77,7 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     }
   }
 
-  // 1. Distribute videos in chronological order across columns round-robin
+  // 1. Distribute videos across columns round-robin
   let videoBucketIdx = newestItem.type === 'video' ? 1 : 0;
   for (const video of remainingVideos) {
     let bestBucket = -1;
@@ -93,15 +96,13 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     videoBucketIdx = (bestBucket + 1) % numCols;
   }
 
-  // 2. Distribute photos round-robin across subcategories in chronological order (FIFO - shift())
-  // This guarantees all subcategories are divided proportionally across columns without random shuffling!
+  // 2. Distribute photos round-robin across subcategories in chronological order
   const subcatKeys = Object.keys(photosBySubcat);
   while (subcatKeys.some((k) => photosBySubcat[k].length > 0)) {
     for (const key of subcatKeys) {
       if (photosBySubcat[key].length > 0) {
         const photo = photosBySubcat[key].shift()!;
 
-        // Find bucket that has capacity and lowest count of this subcategory
         let bestBucket = -1;
         let minSameSub = Infinity;
         let minLength = Infinity;
@@ -126,8 +127,7 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     }
   }
 
-  // 3. Inside each bucket, interleave subcategories and media types stably
-  // so items from the same subcategory or video type don't bunch consecutively
+  // 3. Inside each bucket, interleave photos and videos stably
   for (let b = 0; b < numCols; b++) {
     const isFirstBucket = b === 0;
     const bucketItems = isFirstBucket ? buckets[b].slice(1) : buckets[b];
@@ -204,9 +204,14 @@ export default function ModernGallery({
   const [activeCategory, setActiveCategory] = useState<string>(
     initialCategories && initialCategories.length > 0 ? initialCategories[0].id : ''
   );
-  const [activeSubcategory, setActiveSubcategory] = useState<string>('all');
+  const [activeSubcategory, setActiveSubcategory] = useState<string>(
+    initialCategories && initialCategories[0]?.subcategories?.length > 0
+      ? initialCategories[0].subcategories[0].id
+      : 'all'
+  );
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
 
   const galleryContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -220,91 +225,30 @@ export default function ModernGallery({
   useEffect(() => {
     if (initialCategories && initialCategories.length > 0) {
       setCategories(initialCategories);
-      setActiveCategory((prev) => {
-        if (prev === 'all') return prev;
-        if (prev && initialCategories.some((c) => c.id === prev)) {
+      const firstCat = initialCategories[0];
+      const validCatId =
+        activeCategory && initialCategories.some((c) => c.id === activeCategory)
+          ? activeCategory
+          : firstCat.id;
+
+      setActiveCategory(validCatId);
+
+      const chosenCat =
+        initialCategories.find((c) => c.id === validCatId) || firstCat;
+      const firstSub = chosenCat.subcategories?.[0]?.id;
+
+      setActiveSubcategory((prev) => {
+        if (prev && prev !== 'all' && chosenCat.subcategories.some((s) => s.id === prev)) {
           return prev;
         }
-        return initialCategories[0].id;
+        return firstSub || 'all';
       });
     }
-  }, [initialCategories]);
+  }, [initialCategories, activeCategory]);
 
-  // Wait for all DOM images to decode and CSS column heights to balance stably before revealing
   useEffect(() => {
     setHasMounted(true);
-
-    if (items.length === 0) {
-      setIsArrangingLayout(false);
-      return;
-    }
-
-    let isCancelled = false;
-
-    const checkImagesSettled = () => {
-      const container = galleryContainerRef.current;
-      if (!container) return;
-
-      const imgs = Array.from(container.querySelectorAll('img'));
-      const targetImgs = imgs.slice(0, Math.min(imgs.length, 12));
-
-      if (targetImgs.length === 0) {
-        setTimeout(() => {
-          if (!isCancelled) setIsArrangingLayout(false);
-        }, 300);
-        return;
-      }
-
-      let loadedCount = 0;
-      const total = targetImgs.length;
-
-      const onImageDone = () => {
-        loadedCount++;
-        if (loadedCount >= total) {
-          // Allow small buffer (220ms) after all images are decoded for CSS multi-column to settle layout
-          setTimeout(() => {
-            if (!isCancelled) {
-              setIsArrangingLayout(false);
-            }
-          }, 220);
-        }
-      };
-
-      targetImgs.forEach((img) => {
-        if (img.complete && img.naturalHeight > 0) {
-          onImageDone();
-        } else {
-          img.addEventListener('load', onImageDone, { once: true });
-          img.addEventListener('error', onImageDone, { once: true });
-        }
-      });
-    };
-
-    // Request animation frame to ensure real DOM nodes are mounted before attaching listeners
-    const rafId = requestAnimationFrame(() => {
-      checkImagesSettled();
-    });
-
-    // Safety timeout: maximum 2500ms loading state so visitor never waits too long
-    const safetyTimer = setTimeout(() => {
-      if (!isCancelled) {
-        setIsArrangingLayout(false);
-      }
-    }, 2500);
-
-    const timer = setTimeout(() => {
-      if (!isCancelled) {
-        setIsInitialEntrance(false);
-      }
-    }, 3200);
-
-    return () => {
-      isCancelled = true;
-      cancelAnimationFrame(rafId);
-      clearTimeout(safetyTimer);
-      clearTimeout(timer);
-    };
-  }, [items]);
+  }, []);
 
   useEffect(() => {
     if (initialItems && initialItems.length > 0) {
@@ -372,12 +316,23 @@ export default function ModernGallery({
               })),
           }));
           setCategories(structuredCats);
-          setActiveCategory((prev) => {
-            if (prev === 'all') return prev;
-            if (prev && structuredCats.some((c) => c.id === prev)) {
+          const firstCat = structuredCats[0];
+          const validCatId =
+            activeCategory && structuredCats.some((c) => c.id === activeCategory)
+              ? activeCategory
+              : firstCat?.id || '';
+
+          setActiveCategory(validCatId);
+
+          const chosenCat =
+            structuredCats.find((c) => c.id === validCatId) || firstCat;
+          const firstSub = chosenCat?.subcategories?.[0]?.id;
+
+          setActiveSubcategory((prev) => {
+            if (prev && prev !== 'all' && chosenCat?.subcategories.some((s) => s.id === prev)) {
               return prev;
             }
-            return structuredCats[0].id;
+            return firstSub || 'all';
           });
         } else {
           setCategories([]);
@@ -428,14 +383,18 @@ export default function ModernGallery({
   // Handle switching main category
   const handleSelectCategory = (catId: string) => {
     setIsInitialEntrance(false);
+    setIsArrangingLayout(true);
     setActiveCategory(catId);
-    setActiveSubcategory('all'); // Reset subcategory filter when switching main category
+    const targetCat = categories.find((c) => c.id === catId);
+    const firstSub = targetCat?.subcategories?.[0]?.id;
+    setActiveSubcategory(firstSub || 'all'); // Sembunyikan 'all', langsung default ke subkategori pertama
     setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
   };
 
   // Handle switching subcategory
   const handleSelectSubcategory = (subId: string) => {
     setIsInitialEntrance(false);
+    setIsArrangingLayout(true);
     setActiveSubcategory(subId);
     setVisibleCount(ITEMS_PER_PAGE); // Reset pagination count
   };
@@ -470,13 +429,8 @@ export default function ModernGallery({
       );
     }
 
-    // Smart Balanced Distribution:
-    // Newest work is always at top-left, while remaining works are pseudo-randomly
-    // distributed across columns so videos, photos, and subcategories never clump!
-    return distributeGalleryItemsBalanced(result);
+    return result;
   }, [items, activeCategory, categories, activeCategoryObj, activeSubcategory, currentSubcategories]);
-
-
 
   // Fitur Load More / Show Less disimpan (di-keep), saat ini dinonaktifkan sementara menunggu persetujuan client
   // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
@@ -484,9 +438,97 @@ export default function ModernGallery({
 
   // Displayed items slice based on Load More count (atau tampil penuh jika nonaktif)
   const displayedItems = useMemo(() => {
-    if (!ENABLE_LOAD_MORE) return filteredItems;
-    return filteredItems.slice(0, visibleCount);
+    const baseItems = !ENABLE_LOAD_MORE ? filteredItems : filteredItems.slice(0, visibleCount);
+    return distributeGalleryItemsBalanced(baseItems);
   }, [filteredItems, visibleCount, ENABLE_LOAD_MORE]);
+
+  // PRELOAD & DECODE ALL IMAGES IN MEMORY BEFORE DISPLAYING TO USER
+  // Menjamin semua gambar sudah tersusun dan ter-decode 100% di memori browser sebelum ditampilkan
+  useEffect(() => {
+    if (displayedItems.length === 0) {
+      setIsArrangingLayout(false);
+      return;
+    }
+
+    setIsArrangingLayout(true);
+    let isCancelled = false;
+
+    const preloadAllImages = async () => {
+      const detectedAspects: Record<string, number> = {};
+      const startTime = Date.now();
+
+      const promises = displayedItems.map((item) => {
+        return new Promise<void>((resolve) => {
+          const isVideo = item.type === 'video' && Boolean(item.videoUrl);
+          const isYouTube = isVideo && item.videoUrl ? Boolean(getYouTubeVideoId(item.videoUrl)) : false;
+          const fallbackThumbnail =
+            'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600"><rect width="100%" height="100%" fill="%23141419"/></svg>';
+          const rawThumbnail =
+            (isYouTube && item.videoUrl ? getYouTubeThumbnail(item.videoUrl) || item.image : item.image) || fallbackThumbnail;
+          const url = getOptimizedCloudinaryUrl(resolveVideoPlayUrl(rawThumbnail), { width: 1200 });
+
+          const img = new window.Image();
+          img.src = url;
+
+          const onFinish = () => {
+            if (img.naturalWidth && img.naturalHeight && img.naturalHeight > 0) {
+              detectedAspects[item.id] = img.naturalWidth / img.naturalHeight;
+            }
+            if (img.decode) {
+              img.decode().then(() => resolve()).catch(() => resolve());
+            } else {
+              resolve();
+            }
+          };
+
+          if (img.complete && img.naturalHeight > 0) {
+            onFinish();
+          } else {
+            img.onload = onFinish;
+            img.onerror = () => resolve();
+          }
+        });
+      });
+
+      await Promise.all(promises);
+
+      if (isCancelled) return;
+
+      // Update aspect ratios map so GalleryCard can pre-allocate exact dimensions
+      setAspectRatios((prev) => ({ ...prev, ...detectedAspects }));
+
+      // Ensure minimal duration of 300ms for smooth skeleton transition so layout settles
+      const elapsed = Date.now() - startTime;
+      const minDisplayTime = 300;
+      const remainingWait = Math.max(100, minDisplayTime - elapsed);
+
+      setTimeout(() => {
+        if (!isCancelled) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!isCancelled) {
+                setIsArrangingLayout(false);
+              }
+            });
+          });
+        }
+      }, remainingWait);
+    };
+
+    preloadAllImages();
+
+    // Safety timeout: maximum 2500ms
+    const safetyTimer = setTimeout(() => {
+      if (!isCancelled) {
+        setIsArrangingLayout(false);
+      }
+    }, 2500);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(safetyTimer);
+    };
+  }, [activeCategory, activeSubcategory, displayedItems]);
 
   const hasMore = visibleCount < filteredItems.length;
   const remainingCount = Math.max(0, filteredItems.length - visibleCount);
@@ -531,7 +573,6 @@ export default function ModernGallery({
 
     return activeCategoryObj.description;
   }, [activeCategory, activeCategoryObj, activeSubcategory, currentSubcategories]);
-
 
   const openLightbox = useCallback((index: number) => {
     setActiveMediaIndex(index);
@@ -627,7 +668,8 @@ export default function ModernGallery({
               <Layers className="w-3 h-3 text-neutral-600" />
             </span>
 
-            {/* All in Category button */}
+            {/* SEMENTARA DISEMBUNYIKAN: Filter 'All in Category' (Dapat diaktifkan kembali jika diperlukan) */}
+            {/*
             <button
               onClick={() => handleSelectSubcategory('all')}
               className={`text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${activeSubcategory === 'all'
@@ -637,6 +679,7 @@ export default function ModernGallery({
             >
               All {activeCategoryObj?.label}
             </button>
+            */}
 
             {/* Subcategory buttons */}
             {currentSubcategories.map((sub) => {
@@ -819,6 +862,7 @@ export default function ModernGallery({
                       hasMounted={hasMounted}
                       isInitialEntrance={isInitialEntrance}
                       onOpenLightbox={openLightbox}
+                      aspectRatio={aspectRatios[item.id]}
                     />
                   );
                 })}

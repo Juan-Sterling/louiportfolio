@@ -18,6 +18,7 @@ interface GalleryCardProps {
   hasMounted: boolean;
   isInitialEntrance?: boolean;
   onOpenLightbox: (index: number) => void;
+  aspectRatio?: number;
 }
 
 function GalleryCard({
@@ -27,11 +28,13 @@ function GalleryCard({
   hasMounted,
   isInitialEntrance = true,
   onOpenLightbox,
+  aspectRatio,
 }: GalleryCardProps) {
   // Video preview states
   const [isPreviewActive, setIsPreviewActive] = useState<boolean>(false);
   const [isMediaReady, setIsMediaReady] = useState<boolean>(false);
   const [hasCompletedPreview, setHasCompletedPreview] = useState<boolean>(false);
+  const [previewDuration, setPreviewDuration] = useState<number>(10);
 
   // Timers refs
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -39,12 +42,15 @@ function GalleryCard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Staggered entrance animation delay
-  // During first load: a clear, cinematic cascade so the user sees each card reveal
-  // After initial load (when filtering): snappy 40ms stagger so filtering feels instant
-  const baseDelay = isInitialEntrance ? 650 : 40;
-  const stepDelay = isInitialEntrance ? 75 : 40;
-  const maxDelay = isInitialEntrance ? 1650 : 480;
+  // Snappy delay so cards appear smoothly and stably together
+  const baseDelay = 40;
+  const stepDelay = 20;
+  const maxDelay = 220;
   const cardDelay = Math.min(idx * stepDelay + baseDelay, maxDelay);
+
+  // Lock animation class and delay at mount so cards NEVER flicker or restart animation mid-flight
+  const [animationClass] = useState(() => (isInitialEntrance ? 'animate-entrance-card' : 'animate-fadeIn'));
+  const [animationDelayStyle] = useState(() => (isInitialEntrance ? `${cardDelay}ms` : '0ms'));
 
   // Video helpers
   const isVideo = item.type === 'video' && Boolean(item.videoUrl);
@@ -90,18 +96,19 @@ function GalleryCard({
     setHasCompletedPreview(true);
   }, [clearTimers]);
 
-  // Mouse enter: trigger debounced 10s video preview
+  // Mouse enter: trigger debounced video preview
   const handleMouseEnter = () => {
     if (isVideo) {
       clearTimers();
       setHasCompletedPreview(false);
+      setPreviewDuration(10);
 
       // Debounce slightly (220ms) so fast mouse passes across the grid don't trigger iframes
       debounceTimerRef.current = setTimeout(() => {
         setIsPreviewActive(true);
         setIsMediaReady(false);
 
-        // Strict 10-second preview limit (10,000 ms)
+        // Preview limit fallback: 10s (disesuaikan otomatis jika durasi asli < 10s)
         durationTimerRef.current = setTimeout(() => {
           handlePreviewEnd();
         }, 10000);
@@ -115,6 +122,7 @@ function GalleryCard({
     setIsPreviewActive(false);
     setIsMediaReady(false);
     setHasCompletedPreview(false);
+    setPreviewDuration(10);
   };
 
   // Clean up timers on unmount
@@ -130,15 +138,16 @@ function GalleryCard({
     setIsPreviewActive(false);
     setIsMediaReady(false);
     setHasCompletedPreview(false);
+    setPreviewDuration(10);
     onOpenLightbox(fullIndex !== -1 ? fullIndex : idx);
   };
 
   return (
     <div className="break-inside-avoid mb-6 md:mb-7 block w-full">
       <div
-        className="animate-entrance-card"
+        className={animationClass}
         style={{
-          animationDelay: `${cardDelay}ms`,
+          animationDelay: animationDelayStyle,
         }}
       >
         <div
@@ -147,15 +156,18 @@ function GalleryCard({
           onMouseLeave={handleMouseLeave}
           className="group relative cursor-pointer overflow-hidden rounded-[24px] md:rounded-[30px] bg-neutral-200 shadow-[0_6px_25px_rgb(0,0,0,0.06)] hover:shadow-[0_20px_45px_rgb(0,0,0,0.18)] transition-all duration-500 hover:-translate-y-1 select-none"
         >
-          {/* Media Container */}
-          <div className={`relative w-full overflow-hidden ${isShorts ? 'aspect-[4/5]' : ''}`}>
+          {/* Media Container (Locked to exact aspect ratio for 0 Cumulative Layout Shift) */}
+          <div
+            className={`relative w-full overflow-hidden ${isShorts ? 'aspect-[4/5]' : ''}`}
+            style={aspectRatio && !isShorts ? { aspectRatio: `${aspectRatio}` } : undefined}
+          >
             {/* Base Thumbnail Image (Always stays rendered for zero layout shift) */}
             <Image
               src={itemThumbnail}
               alt={item.subcategoryLabel || 'Portfolio Work'}
               width={1200}
-              height={1200}
-              priority={idx < 4}
+              height={aspectRatio ? Math.round(1200 / aspectRatio) : 1200}
+              priority={idx < 12}
               unoptimized
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
               className={`w-full ${
@@ -198,13 +210,44 @@ function GalleryCard({
                     controlsList="nodownload noplaybackrate"
                     disablePictureInPicture
                     onContextMenu={(e) => e.preventDefault()}
-                    onLoadedData={() => setIsMediaReady(true)}
+                    onLoadedMetadata={(e) => {
+                      const dur = e.currentTarget.duration;
+                      if (dur && isFinite(dur) && dur > 0) {
+                        const effective = dur < 10 ? dur : 10;
+                        setPreviewDuration(effective);
+                        if (durationTimerRef.current) {
+                          clearTimeout(durationTimerRef.current);
+                          const remainingTime = Math.max(0, effective - e.currentTarget.currentTime) * 1000;
+                          durationTimerRef.current = setTimeout(() => {
+                            handlePreviewEnd();
+                          }, remainingTime);
+                        }
+                      }
+                    }}
+                    onLoadedData={(e) => {
+                      setIsMediaReady(true);
+                      const dur = e.currentTarget.duration;
+                      if (dur && isFinite(dur) && dur > 0) {
+                        const effective = dur < 10 ? dur : 10;
+                        setPreviewDuration(effective);
+                        if (durationTimerRef.current) {
+                          clearTimeout(durationTimerRef.current);
+                          const remainingTime = Math.max(0, effective - e.currentTarget.currentTime) * 1000;
+                          durationTimerRef.current = setTimeout(() => {
+                            handlePreviewEnd();
+                          }, remainingTime);
+                        }
+                      }
+                    }}
                     onTimeUpdate={(e) => {
-                      if (e.currentTarget.currentTime >= 10) {
+                      const dur = e.currentTarget.duration;
+                      const maxDur = dur && isFinite(dur) && dur > 0 && dur < 10 ? dur : 10;
+                      if (e.currentTarget.currentTime >= maxDur) {
                         e.currentTarget.pause();
                         handlePreviewEnd();
                       }
                     }}
+                    onEnded={handlePreviewEnd}
                     className="w-full h-full object-cover pointer-events-none"
                   />
                 )}
@@ -212,7 +255,7 @@ function GalleryCard({
             )}
 
             {/* ========================================================= */}
-            {/* 10-SECOND PROGRESS BAR INDICATOR                          */}
+            {/* DYNAMIC PROGRESS BAR INDICATOR (MAX 10S / DURASI ASLI)    */}
             {/* ========================================================= */}
             {isVideo && isPreviewActive && (
               <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/40 z-20 pointer-events-none overflow-hidden">
@@ -220,7 +263,7 @@ function GalleryCard({
                   className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all ease-linear"
                   style={{
                     width: isMediaReady ? '100%' : '0%',
-                    transitionDuration: isMediaReady ? '10000ms' : '0ms',
+                    transitionDuration: isMediaReady ? `${Math.round(previewDuration * 1000)}ms` : '0ms',
                   }}
                 />
               </div>
@@ -245,8 +288,9 @@ function GalleryCard({
 
             {/* ========================================================= */}
             {/* BOTTOM-LEFT TAG: SUBCATEGORY PILL                         */}
-            {/* Disembunyikan saat hover & play, muncul kembali saat idle/berhenti */}
+            {/* SEMENTARA DISEMBUNYIKAN (dapat diaktifkan kembali jika diperlukan) */}
             {/* ========================================================= */}
+            {/*
             <div
               className={`absolute bottom-4 left-4 z-10 pointer-events-none transition-all duration-300 ${
                 isPreviewActive
@@ -258,6 +302,7 @@ function GalleryCard({
                 {item.subcategoryLabel}
               </span>
             </div>
+            */}
           </div>
         </div>
       </div>
