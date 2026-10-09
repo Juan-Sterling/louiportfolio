@@ -150,7 +150,7 @@ function GalleryCard({
             alt={item.subcategoryLabel || 'Portfolio Work'}
             width={1200}
             height={1200}
-            priority={idx < 4}
+            priority={idx < 12}
             unoptimized
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className={`w-full ${

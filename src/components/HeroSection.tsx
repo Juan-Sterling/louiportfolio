@@ -19,18 +19,18 @@ export default function HeroSection() {
 
         {/* Center Column: Logo & Portfolio Title */}
         <div className="flex flex-col items-center justify-center text-center order-1 md:order-2 animate-entrance-hero-center">
-          <div className="relative w-[200px] sm:w-[260px] md:w-[320px] lg:w-[360px] h-[90px] sm:h-[120px] md:h-[140px] lg:h-[160px] transition-transform duration-500 hover:scale-105">
+          <div className="relative w-[85px] sm:w-[105px] md:w-[120px] lg:w-[135px] aspect-[716/293] transition-transform duration-500 hover:scale-105">
             <Image
               src="/images/loui-logo.png"
               alt="LOUI"
               fill
               priority
-              sizes="(max-width: 640px) 200px, (max-width: 1024px) 320px, 360px"
+              sizes="(max-width: 640px) 85px, (max-width: 1024px) 120px, 135px"
               className="object-contain"
             />
           </div>
 
-          <h1 className="mt-1 md:mt-2 text-xs sm:text-sm md:text-base font-semibold tracking-[0.25em] text-neutral-900 uppercase font-sans">
+          <h1 className="mt-1 sm:mt-1.5 text-xs sm:text-sm md:text-base font-semibold tracking-[0.25em] text-neutral-900 uppercase font-sans">
             PORTFOLIO
           </h1>
         </div>

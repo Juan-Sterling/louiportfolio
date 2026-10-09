@@ -27,8 +27,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/images/loui-logo.png",
-        width: 800,
-        height: 800,
+        width: 716,
+        height: 293,
         alt: "LOUI Portfolio Logo",
       },
     ],
