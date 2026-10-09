@@ -50,13 +50,14 @@ function hashString(str: string): number {
 }
 
 /**
- * Distributes gallery items across 3 masonry columns so that:
- * 1. The NEWEST item is ALWAYS placed at the top-left (Bucket 0, index 0).
- * 2. If multiple new items share the same subcategory, subsequent ones are sent
- *    to other columns (Bucket 1 or 2) so they don't clump on the left.
- * 3. Videos and photos are evenly balanced across all 3 columns.
- * 4. Subcategories are distributed evenly across columns and interleaved within columns.
- * 5. Uses a deterministic PRNG based on item IDs so results are stable across renders.
+ * Distributes gallery items across 3 masonry columns proportionally:
+ * 1. The NEWEST item is ALWAYS placed at top-left (Bucket 0, index 0).
+ * 2. Videos are distributed round-robin across all 3 columns so videos never clump.
+ * 3. Photos across ALL subcategories are distributed proportionally using a least-filled
+ *    column balancing strategy so NO subcategory piles up in any single column.
+ * 4. Inside each column, subcategories and media types are interleaved (alternated)
+ *    so different visual projects are blended smoothly down each column.
+ * 5. Uses a deterministic PRNG based on item IDs so results remain rock-solid across renders.
  */
 function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
   if (!items || items.length <= 1) return items;
@@ -90,121 +91,120 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
   // Bucket 0 (Left Column) ALWAYS gets the newest item first!
   buckets[0].push(newestItem);
 
-  const newestSubcat = newestItem.subcategory;
-  const sameSubcatItems: MediaItem[] = [];
-  const otherVideos: MediaItem[] = [];
-  const otherPhotos: MediaItem[] = [];
+  // Separate remaining items into videos and photos grouped by subcategory
+  const remainingVideos: MediaItem[] = [];
+  const photosBySubcat: Record<string, MediaItem[]> = {};
 
   for (const item of remaining) {
-    if (newestSubcat && item.subcategory === newestSubcat) {
-      sameSubcatItems.push(item);
-    } else if (item.type === 'video') {
-      otherVideos.push(item);
+    if (item.type === 'video') {
+      remainingVideos.push(item);
     } else {
-      otherPhotos.push(item);
+      const sub = item.subcategory || 'default';
+      if (!photosBySubcat[sub]) photosBySubcat[sub] = [];
+      photosBySubcat[sub].push(item);
     }
   }
 
-  const shuffledSameSub = shuffle(sameSubcatItems);
-  const shuffledVideos = shuffle(otherVideos);
-  const shuffledPhotos = shuffle(otherPhotos);
-
-  // 1. Same-subcategory items go to Bucket 1 (middle) and Bucket 2 (right) first
-  for (const item of shuffledSameSub) {
-    const targetBucket =
-      buckets[1].length < chunkSizes[1]
-        ? 1
-        : buckets[2].length < chunkSizes[2]
-          ? 2
-          : 0;
-    buckets[targetBucket].push(item);
-  }
-
-  // 2. Distribute videos across columns round-robin so videos don't clump on one side
+  // 1. Distribute videos across all columns in round-robin fashion so videos are balanced
+  const shuffledVideos = shuffle(remainingVideos);
   let videoBucketIdx = newestItem.type === 'video' ? 1 : 0;
   for (const video of shuffledVideos) {
     let bestBucket = -1;
-    let minVideos = Infinity;
-
+    let minItems = Infinity;
     for (let i = 0; i < numCols; i++) {
       const bIdx = (videoBucketIdx + i) % numCols;
-      if (buckets[bIdx].length < chunkSizes[bIdx]) {
-        const vCount = buckets[bIdx].filter((x) => x.type === 'video').length;
-        if (vCount < minVideos) {
-          minVideos = vCount;
-          bestBucket = bIdx;
-        }
+      if (buckets[bIdx].length < chunkSizes[bIdx] && buckets[bIdx].length < minItems) {
+        minItems = buckets[bIdx].length;
+        bestBucket = bIdx;
       }
     }
-
-    if (bestBucket !== -1) {
-      buckets[bestBucket].push(video);
-      videoBucketIdx = (bestBucket + 1) % numCols;
-    } else {
-      const shortest = buckets.reduce(
-        (min, b, idx) => (b.length < buckets[min].length ? idx : min),
-        0
-      );
-      buckets[shortest].push(video);
+    if (bestBucket === -1) {
+      bestBucket = buckets.reduce((min, b, idx) => (b.length < buckets[min].length ? idx : min), 0);
     }
+    buckets[bestBucket].push(video);
+    videoBucketIdx = (bestBucket + 1) % numCols;
   }
 
-  // 3. Distribute other photos to fill remaining space, spreading subcategories
-  const photosBySubcat: Record<string, MediaItem[]> = {};
-  for (const p of shuffledPhotos) {
-    const sub = p.subcategory || 'default';
-    if (!photosBySubcat[sub]) photosBySubcat[sub] = [];
-    photosBySubcat[sub].push(p);
-  }
-
+  // 2. Shuffle photos inside each subcategory
   const subcatKeys = Object.keys(photosBySubcat);
-  while (Object.values(photosBySubcat).some((arr) => arr.length > 0)) {
+  for (const key of subcatKeys) {
+    photosBySubcat[key] = shuffle(photosBySubcat[key]);
+  }
+
+  // 3. Distribute photos round-robin across subcategories into least-filled columns
+  // This guarantees all subcategories are divided proportionally across columns!
+  while (subcatKeys.some((k) => photosBySubcat[k].length > 0)) {
     for (const key of subcatKeys) {
-      const arr = photosBySubcat[key];
-      if (arr && arr.length > 0) {
-        const photo = arr.pop()!;
+      if (photosBySubcat[key].length > 0) {
+        const photo = photosBySubcat[key].pop()!;
+
+        // Find bucket that has capacity and lowest count of this subcategory
         let bestBucket = -1;
         let minSameSub = Infinity;
+        let minLength = Infinity;
 
         for (let b = 0; b < numCols; b++) {
           if (buckets[b].length < chunkSizes[b]) {
-            const sameSubCount = buckets[b].filter((x) => x.subcategory === key).length;
-            if (sameSubCount < minSameSub) {
-              minSameSub = sameSubCount;
+            const sameCount = buckets[b].filter((x) => x.subcategory === key).length;
+            if (sameCount < minSameSub || (sameCount === minSameSub && buckets[b].length < minLength)) {
+              minSameSub = sameCount;
+              minLength = buckets[b].length;
               bestBucket = b;
             }
           }
         }
 
         if (bestBucket === -1) {
-          bestBucket = buckets.reduce(
-            (min, b, idx) => (b.length < buckets[min].length ? idx : min),
-            0
-          );
+          bestBucket = buckets.reduce((min, b, idx) => (b.length < buckets[min].length ? idx : min), 0);
         }
+
         buckets[bestBucket].push(photo);
       }
     }
   }
 
-  // 4. Inside each bucket, interleave photos and videos
+  // 4. Inside each bucket, interleave subcategories and media types
+  // so items from the same subcategory or video type don't bunch consecutively
   for (let b = 0; b < numCols; b++) {
     const isFirstBucket = b === 0;
     const bucketItems = isFirstBucket ? buckets[b].slice(1) : buckets[b];
 
-    const vids = bucketItems.filter((x) => x.type === 'video');
-    const phots = bucketItems.filter((x) => x.type !== 'video');
-    const interleaved: MediaItem[] = [];
+    const itemsBySub: Record<string, MediaItem[]> = {};
+    const bucketVideos: MediaItem[] = [];
 
-    let vI = 0;
-    let pI = 0;
-    while (vI < vids.length || pI < phots.length) {
-      if (phots[pI]) interleaved.push(phots[pI++]);
-      if (phots[pI]) interleaved.push(phots[pI++]);
-      if (vids[vI]) interleaved.push(vids[vI++]);
+    for (const it of bucketItems) {
+      if (it.type === 'video') {
+        bucketVideos.push(it);
+      } else {
+        const s = it.subcategory || 'default';
+        if (!itemsBySub[s]) itemsBySub[s] = [];
+        itemsBySub[s].push(it);
+      }
     }
 
-    buckets[b] = isFirstBucket ? [newestItem, ...interleaved] : interleaved;
+    const subList = Object.keys(itemsBySub);
+    const interleavedPhotos: MediaItem[] = [];
+
+    while (subList.some((s) => itemsBySub[s].length > 0)) {
+      for (const s of subList) {
+        if (itemsBySub[s].length > 0) {
+          interleavedPhotos.push(itemsBySub[s].pop()!);
+        }
+      }
+    }
+
+    const finalList: MediaItem[] = [];
+    let pIdx = 0;
+    let vIdx = 0;
+
+    while (pIdx < interleavedPhotos.length || vIdx < bucketVideos.length) {
+      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
+      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
+      if (bucketVideos[vIdx]) finalList.push(bucketVideos[vIdx++]);
+      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
+    }
+
+    buckets[b] = isFirstBucket ? [newestItem, ...finalList] : finalList;
   }
 
   return buckets.flat();
