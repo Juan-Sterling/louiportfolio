@@ -30,34 +30,16 @@ export interface GalleryCategory {
 
 
 /**
- * Fast deterministic pseudo-random generator (Mulberry32)
- */
-function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function hashString(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
-  }
-  return hash >>> 0;
-}
-
-/**
- * Distributes gallery items across 3 masonry columns proportionally:
+ * Distributes gallery items across 3 masonry columns proportionally & stably:
  * 1. The NEWEST item is ALWAYS placed at top-left (Bucket 0, index 0).
- * 2. Videos are distributed round-robin across all 3 columns so videos never clump.
- * 3. Photos across ALL subcategories are distributed proportionally using a least-filled
- *    column balancing strategy so NO subcategory piles up in any single column.
- * 4. Inside each column, subcategories and media types are interleaved (alternated)
- *    so different visual projects are blended smoothly down each column.
- * 5. Uses a deterministic PRNG based on item IDs so results remain rock-solid across renders.
+ * 2. Videos are distributed in chronological order round-robin across all 3 columns
+ *    so videos are evenly spaced and NEVER clump together.
+ * 3. Photos across subcategories are distributed in chronological order (FIFO)
+ *    into the least-filled columns so subcategories are evenly divided.
+ * 4. Inside each column, subcategories and media types are interleaved stably
+ *    (e.g., 2-3 photos per video) so videos and photos alternate smoothly down each column.
+ * 5. 100% deterministic & shuffle-free: items NEVER scramble or jump randomly between columns
+ *    when navigating categories or subcategories!
  */
 function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
   if (!items || items.length <= 1) return items;
@@ -72,19 +54,6 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
 
   const newestItem = items[0];
   const remaining = items.slice(1);
-
-  // Deterministic PRNG seeded by item IDs for smooth stable rendering
-  const seed = hashString(items.map((i) => i.id).join('-'));
-  const random = mulberry32(seed);
-
-  const shuffle = <T,>(arr: T[]): T[] => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
 
   const buckets: MediaItem[][] = [[], [], []];
 
@@ -105,10 +74,9 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     }
   }
 
-  // 1. Distribute videos across all columns in round-robin fashion so videos are balanced
-  const shuffledVideos = shuffle(remainingVideos);
+  // 1. Distribute videos in chronological order across columns round-robin
   let videoBucketIdx = newestItem.type === 'video' ? 1 : 0;
-  for (const video of shuffledVideos) {
+  for (const video of remainingVideos) {
     let bestBucket = -1;
     let minItems = Infinity;
     for (let i = 0; i < numCols; i++) {
@@ -125,18 +93,13 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     videoBucketIdx = (bestBucket + 1) % numCols;
   }
 
-  // 2. Shuffle photos inside each subcategory
+  // 2. Distribute photos round-robin across subcategories in chronological order (FIFO - shift())
+  // This guarantees all subcategories are divided proportionally across columns without random shuffling!
   const subcatKeys = Object.keys(photosBySubcat);
-  for (const key of subcatKeys) {
-    photosBySubcat[key] = shuffle(photosBySubcat[key]);
-  }
-
-  // 3. Distribute photos round-robin across subcategories into least-filled columns
-  // This guarantees all subcategories are divided proportionally across columns!
   while (subcatKeys.some((k) => photosBySubcat[k].length > 0)) {
     for (const key of subcatKeys) {
       if (photosBySubcat[key].length > 0) {
-        const photo = photosBySubcat[key].pop()!;
+        const photo = photosBySubcat[key].shift()!;
 
         // Find bucket that has capacity and lowest count of this subcategory
         let bestBucket = -1;
@@ -163,7 +126,7 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     }
   }
 
-  // 4. Inside each bucket, interleave subcategories and media types
+  // 3. Inside each bucket, interleave subcategories and media types stably
   // so items from the same subcategory or video type don't bunch consecutively
   for (let b = 0; b < numCols; b++) {
     const isFirstBucket = b === 0;
@@ -188,7 +151,7 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     while (subList.some((s) => itemsBySub[s].length > 0)) {
       for (const s of subList) {
         if (itemsBySub[s].length > 0) {
-          interleavedPhotos.push(itemsBySub[s].pop()!);
+          interleavedPhotos.push(itemsBySub[s].shift()!);
         }
       }
     }
@@ -196,12 +159,18 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
     const finalList: MediaItem[] = [];
     let pIdx = 0;
     let vIdx = 0;
+    const step =
+      bucketVideos.length > 0
+        ? Math.max(2, Math.floor(interleavedPhotos.length / bucketVideos.length))
+        : 3;
 
     while (pIdx < interleavedPhotos.length || vIdx < bucketVideos.length) {
-      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
-      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
-      if (bucketVideos[vIdx]) finalList.push(bucketVideos[vIdx++]);
-      if (interleavedPhotos[pIdx]) finalList.push(interleavedPhotos[pIdx++]);
+      for (let s = 0; s < step && pIdx < interleavedPhotos.length; s++) {
+        finalList.push(interleavedPhotos[pIdx++]);
+      }
+      if (vIdx < bucketVideos.length) {
+        finalList.push(bucketVideos[vIdx++]);
+      }
     }
 
     buckets[b] = isFirstBucket ? [newestItem, ...finalList] : finalList;
@@ -252,10 +221,11 @@ export default function ModernGallery({
     if (initialCategories && initialCategories.length > 0) {
       setCategories(initialCategories);
       setActiveCategory((prev) => {
-        if (!prev || prev === 'all' || !initialCategories.some((c) => c.id === prev)) {
-          return initialCategories[0].id;
+        if (prev === 'all') return prev;
+        if (prev && initialCategories.some((c) => c.id === prev)) {
+          return prev;
         }
-        return prev;
+        return initialCategories[0].id;
       });
     }
   }, [initialCategories]);
@@ -403,10 +373,11 @@ export default function ModernGallery({
           }));
           setCategories(structuredCats);
           setActiveCategory((prev) => {
-            if (!prev || prev === 'all' || !structuredCats.some((c) => c.id === prev)) {
-              return structuredCats[0].id;
+            if (prev === 'all') return prev;
+            if (prev && structuredCats.some((c) => c.id === prev)) {
+              return prev;
             }
-            return prev;
+            return structuredCats[0].id;
           });
         } else {
           setCategories([]);
@@ -442,8 +413,9 @@ export default function ModernGallery({
     fetchDatabaseData();
   }, []);
 
-  // Currently active Category Object (defaults to activeCategory or first available category)
+  // Currently active Category Object (null if 'all' or no categories)
   const activeCategoryObj = useMemo(() => {
+    if (activeCategory === 'all') return null;
     if (!categories || categories.length === 0) return null;
     return categories.find((c) => c.id === activeCategory) || categories[0];
   }, [activeCategory, categories]);
@@ -472,14 +444,20 @@ export default function ModernGallery({
   const filteredItems = useMemo(() => {
     let result: MediaItem[] = items;
 
-    // Filter by active category (or first category if not yet set)
-    const currentCatId = activeCategory || (categories.length > 0 ? categories[0].id : null);
-
-    if (currentCatId) {
+    // Filter by active category (only if a specific category is chosen, not 'all')
+    if (activeCategory && activeCategory !== 'all') {
       result = result.filter(
         (item) =>
-          item.category === currentCatId ||
+          item.category === activeCategory ||
           (activeCategoryObj && item.categoryLabel === activeCategoryObj.label)
+      );
+    } else if (!activeCategory && categories.length > 0) {
+      // Fallback initial state if activeCategory is empty
+      const firstCat = categories[0];
+      result = result.filter(
+        (item) =>
+          item.category === firstCat.id ||
+          item.categoryLabel === firstCat.label
       );
     }
 
@@ -796,38 +774,39 @@ export default function ModernGallery({
             </div>
           ) : (
             <>
+              {/* Unboxed Editorial Statement sitting ABOVE the Columns for equal baseline */}
+              {activeCategory !== 'all' && activeCategoryObj && (
+                <div
+                  className="mb-8 md:mb-10 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                  style={{
+                    animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                      {activeSubcategory !== 'all'
+                        ? `${activeCategoryObj.label} - ${activeTitle}`
+                        : `ALL ${activeCategoryObj.label}`}
+                    </span>
+                  </div>
+
+                  <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+                    {activeTitle}
+                  </h3>
+
+                  {activeDescription && (
+                    <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-xl">
+                      {activeDescription}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div
                 key={`${activeCategory}-${activeSubcategory}`}
                 className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7"
               >
-                {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
-                {activeCategoryObj && (
-                  <div
-                    className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
-                    style={{
-                      animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
-                    }}
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
-                      <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
-                        {activeSubcategory !== 'all'
-                          ? `${activeCategoryObj?.label} - ${activeTitle}`
-                          : `ALL ${activeCategoryObj?.label}`}
-                      </span>
-                    </div>
-
-                    <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
-                      {activeTitle}
-                    </h3>
-
-                    {activeDescription && (
-                      <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
-                        {activeDescription}
-                      </p>
-                    )}
-                  </div>
-                )}
 
                 {displayedItems.map((item, idx) => {
                   const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
