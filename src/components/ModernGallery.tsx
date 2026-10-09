@@ -774,39 +774,38 @@ export default function ModernGallery({
             </div>
           ) : (
             <>
-              {/* Unboxed Editorial Statement sitting ABOVE the Columns for equal baseline */}
-              {activeCategory !== 'all' && activeCategoryObj && (
-                <div
-                  className="mb-8 md:mb-10 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
-                  style={{
-                    animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
-                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
-                      {activeSubcategory !== 'all'
-                        ? `${activeCategoryObj.label} - ${activeTitle}`
-                        : `ALL ${activeCategoryObj.label}`}
-                    </span>
-                  </div>
-
-                  <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
-                    {activeTitle}
-                  </h3>
-
-                  {activeDescription && (
-                    <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-xl">
-                      {activeDescription}
-                    </p>
-                  )}
-                </div>
-              )}
-
               <div
                 key={`${activeCategory}-${activeSubcategory}`}
                 className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7"
               >
+                {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
+                {activeCategory !== 'all' && activeCategoryObj && (
+                  <div
+                    className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                    style={{
+                      animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                      <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                        {activeSubcategory !== 'all'
+                          ? `${activeCategoryObj.label} - ${activeTitle}`
+                          : `ALL ${activeCategoryObj.label}`}
+                      </span>
+                    </div>
+
+                    <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+                      {activeTitle}
+                    </h3>
+
+                    {activeDescription && (
+                      <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
+                        {activeDescription}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {displayedItems.map((item, idx) => {
                   const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
