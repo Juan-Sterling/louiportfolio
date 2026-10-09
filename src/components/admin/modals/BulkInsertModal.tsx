@@ -17,7 +17,7 @@ import {
 import { AdminCategory } from '@/types/admin';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { uploadToCloudinary, deleteCloudinaryMedia } from '@/lib/cloudinary';
-import { uploadToR2, deleteR2Media, captureVideoFrame, isCloudflareR2Url } from '@/lib/r2';
+import { uploadToR2, deleteR2Media, verifyMultipleR2Media, captureVideoFrame, isCloudflareR2Url } from '@/lib/r2';
 
 interface QueuedFile {
   id: string;
@@ -344,6 +344,20 @@ export default function BulkInsertModal({
           );
           const cldRes = await uploadToCloudinary(item.file);
           uploadedImageUrl = cldRes.url;
+        }
+
+        // Pre-commit verification (Solusi B) for R2 uploads
+        if (item.type === 'video') {
+          const filesToCheck = [uploadedVideoUrl, uploadedImageUrl].filter(Boolean) as string[];
+          if (filesToCheck.length > 0) {
+            setOverallStatusText(`Verifying ${item.name} in Cloudflare R2...`);
+            const { allExist, missingKeys } = await verifyMultipleR2Media(filesToCheck);
+            if (!allExist) {
+              throw new Error(
+                `Upload verification failed: file not confirmed in Cloudflare R2 (${missingKeys.join(', ')}). Aborting record creation.`
+              );
+            }
+          }
         }
 
         // 3. Insert record into Supabase

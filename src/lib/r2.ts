@@ -203,6 +203,55 @@ export async function deleteR2Media(keyOrUrl: string): Promise<boolean> {
 }
 
 /**
+ * Verifies that a file physically exists in Cloudflare R2 storage
+ */
+export async function verifyR2Media(keyOrUrl: string): Promise<boolean> {
+  const key = extractR2Key(keyOrUrl);
+  if (!key) return false;
+
+  try {
+    const res = await fetch('/api/media/r2/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data.exists);
+  } catch (err) {
+    console.warn('Failed to verify R2 media existence:', err);
+    return false;
+  }
+}
+
+/**
+ * Verifies that multiple files physically exist in Cloudflare R2 storage
+ */
+export async function verifyMultipleR2Media(
+  keysOrUrls: string[]
+): Promise<{ allExist: boolean; missingKeys: string[] }> {
+  const keys = keysOrUrls.map((k) => extractR2Key(k)).filter(Boolean) as string[];
+  if (keys.length === 0) return { allExist: true, missingKeys: [] };
+
+  try {
+    const res = await fetch('/api/media/r2/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys }),
+    });
+    if (!res.ok) return { allExist: false, missingKeys: keys };
+    const data = await res.json();
+    return {
+      allExist: Boolean(data.allExist),
+      missingKeys: data.missingKeys || [],
+    };
+  } catch (err) {
+    console.warn('Failed to verify multiple R2 media items:', err);
+    return { allExist: false, missingKeys: keys };
+  }
+}
+
+/**
  * Captures a representative snapshot frame from a video file or video URL in the browser
  * and returns it as a JPEG File, ready for upload as a poster / thumbnail.
  */

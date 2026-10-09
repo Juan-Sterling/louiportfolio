@@ -19,6 +19,8 @@ import {
 import {
   uploadToR2,
   deleteR2Media,
+  verifyR2Media,
+  verifyMultipleR2Media,
   captureVideoFrame,
   MAX_VIDEO_SIZE_BYTES,
   isCloudflareR2Url,
@@ -720,6 +722,11 @@ export default function AdminPage() {
         setUploadStatusText('Uploading thumbnail to Cloudflare...');
         const res = await uploadToR2(file);
         uploadedUrl = res.url;
+        setUploadStatusText('Verifying thumbnail in Cloudflare R2...');
+        const verified = await verifyR2Media(uploadedUrl);
+        if (!verified) {
+          throw new Error('Thumbnail upload verification failed in Cloudflare R2.');
+        }
       } else {
         const res = await uploadToCloudinary(file);
         uploadedUrl = res.url;
@@ -810,11 +817,13 @@ export default function AdminPage() {
       }));
 
       // 4. Auto-extract first frame as cover thumbnail and upload directly to Cloudflare R2
+      let thumbResUrl = '';
       setUploadStatusText('Extracting cover thumbnail from video...');
       try {
         const thumbFile = await captureVideoFrame(file, 1);
         setUploadStatusText('Uploading thumbnail to Cloudflare...');
         const thumbRes = await uploadToR2(thumbFile);
+        thumbResUrl = thumbRes.url;
         sessionUploadedImagesRef.current.push(thumbRes.url);
         setContentFormData((prev) => ({
           ...prev,
@@ -822,6 +831,16 @@ export default function AdminPage() {
         }));
       } catch (frameErr) {
         console.warn('Auto cover capture skipped:', frameErr);
+      }
+
+      // 5. Immediate verification: Ensure video and thumbnail are confirmed in R2
+      setUploadStatusText('Verifying media in Cloudflare R2...');
+      const urlsToCheck = [res.url, thumbResUrl].filter(Boolean);
+      const verifyCheck = await verifyMultipleR2Media(urlsToCheck);
+      if (!verifyCheck.allExist) {
+        throw new Error(
+          `Upload verification failed: file not confirmed in Cloudflare R2 (${verifyCheck.missingKeys.join(', ')}). Please try again.`
+        );
       }
 
       showToast('Video and thumbnail uploaded successfully to Cloudflare!');
@@ -989,6 +1008,26 @@ export default function AdminPage() {
         status: contentFormData.status,
       };
 
+      // Pre-commit Verification (Solusi B): Verify physical existence of R2 media files before writing to Supabase
+      const filesToVerify: string[] = [];
+      if (finalVideoUrl && isCloudflareR2Url(finalVideoUrl)) {
+        filesToVerify.push(finalVideoUrl);
+      }
+      if (finalImage && isCloudflareR2Url(finalImage)) {
+        filesToVerify.push(finalImage);
+      }
+
+      if (filesToVerify.length > 0) {
+        setUploadStatusText('Verifying media files in Cloudflare R2...');
+        const { allExist, missingKeys } = await verifyMultipleR2Media(filesToVerify);
+        if (!allExist) {
+          showToast(
+            `Save aborted: Media file is missing or failed to upload to Cloudflare R2 (${missingKeys.join(', ')}). Please re-upload before saving.`
+          );
+          return;
+        }
+      }
+
       if (isSupabaseConfigured && supabase && finalSubcatId) {
         try {
           if (editingItem) {
@@ -1055,6 +1094,12 @@ export default function AdminPage() {
             showToast('New work created successfully.');
           }
 
+          // CRITICAL FIX (Solusi A):
+          // Immediately detach session uploaded refs so that closing the modal
+          // will NEVER trigger deleteR2Media on records that succeeded in the DB!
+          sessionUploadedImagesRef.current = [];
+          sessionUploadedVideosRef.current = [];
+
           // Deferred delete of old replaced image/thumbnail on Save
           if (
             editingItem &&
@@ -1086,7 +1131,11 @@ export default function AdminPage() {
             }
           }
 
-          await loadDatabaseData();
+          try {
+            await loadDatabaseData();
+          } catch (loadErr) {
+            console.warn('Background reload notice:', loadErr);
+          }
         } catch (err: unknown) {
           const error = err as Error;
           console.error('Save error:', error);
