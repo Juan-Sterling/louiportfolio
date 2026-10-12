@@ -11,10 +11,22 @@ import {
   UploadCloud,
   ArrowLeft,
   Film,
+  Layers,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { AdminCategory, ContentFormData } from '@/types/admin';
-import { MediaItem, getYouTubeThumbnail, isYouTubeUrl } from '@/data/portfolioData';
-import { resolveVideoPlayUrl } from '@/lib/r2';
+import { MediaItem, MediaSlide, getYouTubeThumbnail, isYouTubeUrl } from '@/data/portfolioData';
+import {
+  resolveVideoPlayUrl,
+  uploadToR2,
+  captureVideoFrame,
+  MAX_VIDEO_SIZE_BYTES,
+  MAX_VIDEO_SIZE_MB,
+} from '@/lib/r2';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
 interface ContentModalProps {
   isOpen: boolean;
@@ -59,6 +71,169 @@ export default function ContentModal({
   const [videoSourceType, setVideoSourceType] = useState<'youtube' | 'r2'>('youtube');
   const videoInputRef = useRef<HTMLInputElement>(null);
   const posterInputRef = useRef<HTMLInputElement>(null);
+  const slideFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Carousel Slides management state
+  const [isUploadingSlide, setIsUploadingSlide] = useState(false);
+  const [showAddVideoSlideModal, setShowAddVideoSlideModal] = useState(false);
+  const [slideVideoSourceType, setSlideVideoSourceType] = useState<'youtube' | 'device'>('youtube');
+  const [slideVideoInputUrl, setSlideVideoInputUrl] = useState('');
+  const [slideVideoCaption, setSlideVideoCaption] = useState('');
+  const [isUploadingSlideVideo, setIsUploadingSlideVideo] = useState(false);
+  const [slideVideoUploadProgress, setSlideVideoUploadProgress] = useState<number | null>(null);
+  const [slideVideoStatusText, setSlideVideoStatusText] = useState<string>('');
+  const [uploadedSlideVideoUrl, setUploadedSlideVideoUrl] = useState<string>('');
+  const [uploadedSlideVideoThumb, setUploadedSlideVideoThumb] = useState<string>('');
+  const [isDragOverSlideVideo, setIsDragOverSlideVideo] = useState(false);
+  const slideVideoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadSlidePhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingSlide(true);
+    try {
+      const newSlides: MediaSlide[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) continue;
+        const res = await uploadToCloudinary(file);
+        newSlides.push({
+          id: `slide-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'photo',
+          image: res.url,
+          caption: '',
+        });
+      }
+      setContentFormData((prev) => ({
+        ...prev,
+        slides: [...(prev.slides || []), ...newSlides],
+      }));
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(error?.message || 'Failed to upload slide images');
+    } finally {
+      setIsUploadingSlide(false);
+    }
+  };
+
+  const handleUploadSlideVideoFile = async (file: File) => {
+    if (!file) return;
+
+    if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|m4v|mkv)$/i)) {
+      alert('Only video files (MP4, WebM, MOV, M4V, MKV) are allowed.');
+      return;
+    }
+
+    if (file.size > MAX_VIDEO_SIZE_BYTES) {
+      const sizeInMb = (file.size / (1024 * 1024)).toFixed(1);
+      alert(`File size (${sizeInMb}MB) exceeds the ${MAX_VIDEO_SIZE_MB}MB limit for video upload.`);
+      return;
+    }
+
+    setIsUploadingSlideVideo(true);
+    setSlideVideoUploadProgress(0);
+    setSlideVideoStatusText('Uploading video from device...');
+
+    try {
+      // 1. Direct storage upload
+      const res = await uploadToR2(file, (percent) => {
+        setSlideVideoUploadProgress(percent);
+      });
+
+      setUploadedSlideVideoUrl(res.url);
+
+      // 2. Auto-extract cover thumbnail frame from video
+      setSlideVideoStatusText('Generating cover thumbnail...');
+      try {
+        const thumbFile = await captureVideoFrame(file, 1);
+        setSlideVideoStatusText('Uploading thumbnail...');
+        const thumbRes = await uploadToR2(thumbFile);
+        setUploadedSlideVideoThumb(thumbRes.url);
+      } catch (frameErr) {
+        console.warn('Auto cover capture skipped for slide video:', frameErr);
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      alert(error?.message || 'Failed to upload video from device');
+      setUploadedSlideVideoUrl('');
+      setUploadedSlideVideoThumb('');
+    } finally {
+      setIsUploadingSlideVideo(false);
+      setSlideVideoUploadProgress(null);
+      setSlideVideoStatusText('');
+    }
+  };
+
+  const handleAddVideoSlide = () => {
+    let videoUrl = '';
+    let thumbUrl = '';
+
+    const fallbackThumb =
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600"><rect width="100%" height="100%" fill="%23141419"/></svg>';
+
+    if (slideVideoSourceType === 'youtube') {
+      const url = slideVideoInputUrl.trim();
+      if (!url) return;
+      videoUrl = url;
+      thumbUrl = getYouTubeThumbnail(url) || fallbackThumb;
+    } else {
+      if (!uploadedSlideVideoUrl) return;
+      videoUrl = uploadedSlideVideoUrl;
+      thumbUrl = uploadedSlideVideoThumb || fallbackThumb;
+    }
+
+    const newSlide: MediaSlide = {
+      id: `slide-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'video',
+      image: thumbUrl,
+      videoUrl: videoUrl,
+      caption: slideVideoCaption.trim() || undefined,
+    };
+
+    setContentFormData((prev) => ({
+      ...prev,
+      slides: [...(prev.slides || []), newSlide],
+    }));
+
+    handleCloseSlideVideoModal();
+  };
+
+  const handleCloseSlideVideoModal = () => {
+    setSlideVideoSourceType('youtube');
+    setSlideVideoInputUrl('');
+    setSlideVideoCaption('');
+    setUploadedSlideVideoUrl('');
+    setUploadedSlideVideoThumb('');
+    setSlideVideoUploadProgress(null);
+    setSlideVideoStatusText('');
+    setShowAddVideoSlideModal(false);
+  };
+
+  const handleRemoveSlide = (index: number) => {
+    setContentFormData((prev) => ({
+      ...prev,
+      slides: (prev.slides || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleMoveSlide = (index: number, direction: 'up' | 'down') => {
+    const currentSlides = [...(contentFormData.slides || [])];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentSlides.length) return;
+    const temp = currentSlides[index];
+    currentSlides[index] = currentSlides[targetIndex];
+    currentSlides[targetIndex] = temp;
+    setContentFormData((prev) => ({
+      ...prev,
+      slides: currentSlides,
+    }));
+  };
+
+  const handleUpdateSlideCaption = (index: number, caption: string) => {
+    setContentFormData((prev) => ({
+      ...prev,
+      slides: (prev.slides || []).map((s, i) => (i === index ? { ...s, caption } : s)),
+    }));
+  };
 
   // Auto-detect video source type on modal open or URL change
   useEffect(() => {
@@ -352,7 +527,7 @@ export default function ContentModal({
                         <div className="flex items-center justify-between">
                           <label className="text-[11px] font-mono uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                             <ImageIcon className="w-3.5 h-3.5 text-neutral-400" />
-                            <span>Cover Thumbnail (Cloudflare)</span>
+                            <span>Cover Thumbnail</span>
                           </label>
                           {contentFormData.image && (
                             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full border border-emerald-400/20">
@@ -376,7 +551,7 @@ export default function ContentModal({
                                 Cover poster for video playback
                               </p>
                               <p className="text-[10px] text-neutral-500 font-mono">
-                                Stored on Cloudflare R2
+                                Custom thumbnail image
                               </p>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
@@ -408,7 +583,7 @@ export default function ContentModal({
                             className="w-full py-2.5 px-3 rounded-xl border border-dashed border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 text-neutral-300 text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                           >
                             <UploadCloud className="w-4 h-4 text-neutral-400" />
-                            <span>Upload Custom Cover Thumbnail (Cloudflare)</span>
+                            <span>Upload Custom Cover Thumbnail</span>
                           </button>
                         )}
                       </div>
@@ -473,7 +648,7 @@ export default function ContentModal({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400">
-                  Image File (Upload to Cloudinary) *
+                  Image File *
                 </label>
                 <span className="text-[10px] font-mono text-amber-400/90 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
                   Max 10MB
@@ -555,6 +730,463 @@ export default function ContentModal({
               )}
             </div>
           )}
+
+          {/* ========================================================= */}
+          {/* CAROUSEL SLIDES MANAGER SECTION                           */}
+          {/* ========================================================= */}
+          <div className="pt-4 border-t border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-mono uppercase tracking-wider text-neutral-300 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-neutral-400" />
+                  <span>Slides Sequence (Lightbox Carousel)</span>
+                </label>
+                <p className="text-[11px] text-neutral-500 font-sans mt-0.5">
+                  Slide #1 is the primary cover media above. Visitors can browse additional slides using carousel arrows.
+                </p>
+              </div>
+              <span className="text-[11px] font-mono text-amber-300 bg-amber-400/10 px-2.5 py-1 rounded-full border border-amber-400/20">
+                {1 + (contentFormData.slides || []).length} Slides Total
+              </span>
+            </div>
+
+            {/* Hidden file input for slide images */}
+            <input
+              ref={slideFileInputRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/avif"
+              className="hidden"
+              onChange={(e) => {
+                handleUploadSlidePhotos(e.target.files);
+                if (e.target) e.target.value = '';
+              }}
+            />
+
+            {/* Slide action buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => slideFileInputRef.current?.click()}
+                disabled={isUploadingSlide || uploadingMedia}
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isUploadingSlide ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Uploading Image...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Photo Slide</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAddVideoSlideModal(true)}
+                disabled={isUploadingSlide || uploadingMedia}
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>Add Video Slide</span>
+              </button>
+            </div>
+
+            {/* Add Video Slide inline modal */}
+            {showAddVideoSlideModal && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-black/60 border border-white/15 space-y-4 animate-fadeIn shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <span className="text-xs font-mono uppercase tracking-wider text-neutral-200 flex items-center gap-2 font-semibold">
+                    <Film className="w-4 h-4 text-amber-300" />
+                    <span>Add Video Slide</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCloseSlideVideoModal}
+                    className="p-1 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Source Selection Tabs */}
+                <div className="grid grid-cols-2 gap-2 bg-[#121216] p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setSlideVideoSourceType('youtube')}
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      slideVideoSourceType === 'youtube'
+                        ? 'bg-white text-black shadow-md'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>YouTube Link</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSlideVideoSourceType('device')}
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      slideVideoSourceType === 'device'
+                        ? 'bg-white text-black shadow-md'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Upload from Device</span>
+                  </button>
+                </div>
+
+                {/* Tab 1: YouTube Link */}
+                {slideVideoSourceType === 'youtube' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-mono uppercase tracking-wider text-neutral-400 mb-1.5">
+                        YouTube Video URL
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Paste YouTube link (e.g. https://youtu.be/... or https://youtube.com/watch?v=...)"
+                        value={slideVideoInputUrl}
+                        onChange={(e) => setSlideVideoInputUrl(e.target.value)}
+                        className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+
+                    {/* Live YouTube Preview */}
+                    {slideVideoInputUrl.trim() && (
+                      <div className="p-2.5 rounded-xl bg-[#141418] border border-white/10 flex items-center gap-3">
+                        <div className="w-20 h-14 rounded-lg overflow-hidden bg-black relative shrink-0 border border-white/10 flex items-center justify-center">
+                          {getYouTubeThumbnail(slideVideoInputUrl) ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={getYouTubeThumbnail(slideVideoInputUrl)}
+                              alt="YouTube Thumbnail"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Film className="w-5 h-5 text-neutral-600" />
+                          )}
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <Play className="w-4 h-4 text-white fill-current" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">
+                            YouTube Video
+                          </span>
+                          <p className="text-[11px] text-neutral-400 truncate mt-1">
+                            {slideVideoInputUrl}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab 2: Upload from Device */}
+                {slideVideoSourceType === 'device' && (
+                  <div className="space-y-3">
+                    {/* Hidden video file input */}
+                    <input
+                      ref={slideVideoFileInputRef}
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.m4v,.mkv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleUploadSlideVideoFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+
+                    {isUploadingSlideVideo ? (
+                      /* Upload Progress Card */
+                      <div className="p-6 rounded-xl border border-white/15 bg-[#141419] flex flex-col items-center justify-center text-center space-y-3">
+                        <RefreshCw className="w-7 h-7 text-amber-300 animate-spin" />
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-white">
+                            {slideVideoStatusText || 'Uploading video...'}
+                          </p>
+                          {slideVideoUploadProgress !== null && (
+                            <p className="text-[11px] font-mono text-neutral-400">
+                              {slideVideoUploadProgress}% completed
+                            </p>
+                          )}
+                        </div>
+                        {slideVideoUploadProgress !== null && (
+                          <div className="w-full max-w-xs bg-white/10 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-amber-400 h-1.5 rounded-full transition-all duration-200"
+                              style={{ width: `${slideVideoUploadProgress}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : uploadedSlideVideoUrl ? (
+                      /* Uploaded Video Preview */
+                      <div className="p-3.5 rounded-xl bg-[#141419] border border-white/15 space-y-3">
+                        <div className="relative rounded-lg overflow-hidden bg-black border border-white/10 max-h-48 flex items-center justify-center">
+                          <video
+                            src={resolveVideoPlayUrl(uploadedSlideVideoUrl)}
+                            poster={resolveVideoPlayUrl(uploadedSlideVideoThumb)}
+                            controls
+                            className="w-full max-h-48 object-contain"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex items-center gap-1 text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                              <Check className="w-3 h-3" />
+                              <span>Video Ready</span>
+                            </span>
+                            {uploadedSlideVideoThumb && (
+                              <span className="text-[10px] font-mono text-neutral-400">
+                                Auto-Cover Captured
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => slideVideoFileInputRef.current?.click()}
+                            className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white text-white hover:text-black text-[11px] font-semibold uppercase tracking-wider transition-all"
+                          >
+                            Replace Video
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Drag & Drop Upload Area */
+                      <div
+                        onClick={() => slideVideoFileInputRef.current?.click()}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragOverSlideVideo(true);
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          setIsDragOverSlideVideo(false);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOverSlideVideo(false);
+                          const file = e.dataTransfer.files?.[0];
+                          if (file) handleUploadSlideVideoFile(file);
+                        }}
+                        className={`p-6 sm:p-8 rounded-xl border-2 border-dashed cursor-pointer flex flex-col items-center justify-center text-center transition-all ${
+                          isDragOverSlideVideo
+                            ? 'border-white bg-white/10 scale-[0.99]'
+                            : 'border-white/15 hover:border-white/30 bg-[#141419] hover:bg-[#18181f]'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-3 text-neutral-300">
+                          <UploadCloud className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs font-semibold text-white mb-1">
+                          Click to browse or drag & drop video from device
+                        </p>
+                        <p className="text-[11px] text-neutral-400">
+                          Supports MP4, WebM, MOV up to 100MB
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Optional Slide Caption */}
+                <div>
+                  <label className="block text-[11px] font-mono uppercase tracking-wider text-neutral-400 mb-1.5">
+                    Slide Caption (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Brief description or title for this slide..."
+                    value={slideVideoCaption}
+                    onChange={(e) => setSlideVideoCaption(e.target.value)}
+                    className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-white/30"
+                  />
+                </div>
+
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={handleCloseSlideVideoModal}
+                    disabled={isUploadingSlideVideo}
+                    className="px-4 py-2 rounded-xl text-xs text-neutral-400 hover:text-white transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddVideoSlide}
+                    disabled={
+                      isUploadingSlideVideo ||
+                      (slideVideoSourceType === 'youtube' && !slideVideoInputUrl.trim()) ||
+                      (slideVideoSourceType === 'device' && !uploadedSlideVideoUrl)
+                    }
+                    className="px-5 py-2 rounded-xl bg-white text-black text-xs font-semibold uppercase tracking-wider hover:bg-neutral-200 transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Video Slide</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Complete Slides Sequence List */}
+            <div className="space-y-2 pt-1">
+              {/* Pinned Slide #1: Primary Cover Media */}
+              {(() => {
+                const coverThumb =
+                  contentFormData.type === 'video'
+                    ? contentFormData.videoUrl && isYouTubeUrl(contentFormData.videoUrl)
+                      ? getYouTubeThumbnail(contentFormData.videoUrl)
+                      : contentFormData.image
+                    : contentFormData.image;
+
+                return (
+                  <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-amber-400/5 border border-amber-400/25">
+                    <span className="text-[11px] font-mono font-bold text-amber-400 w-6 text-center shrink-0">
+                      #1
+                    </span>
+
+                    <div className="w-14 h-11 rounded-lg overflow-hidden bg-neutral-900 border border-amber-400/30 shrink-0 relative flex items-center justify-center">
+                      {coverThumb ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={resolveVideoPlayUrl(coverThumb)}
+                          alt="Cover Slide"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-[9px] text-neutral-500 font-mono">No Media</span>
+                      )}
+                      {contentFormData.type === 'video' && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <Play className="w-3.5 h-3.5 text-white fill-current" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30 font-semibold">
+                          Cover • {contentFormData.type === 'video' ? 'Video' : 'Photo'}
+                        </span>
+                        <span className="text-[10px] font-mono text-neutral-400">(First Slide)</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 font-sans mt-0.5 truncate">
+                        {contentFormData.description ||
+                          (contentFormData.type === 'video'
+                            ? contentFormData.videoUrl || 'Main video work'
+                            : 'Main cover image')}
+                      </p>
+                    </div>
+
+                    <span className="text-[10px] font-mono text-neutral-400 bg-white/5 px-2 py-1 rounded-lg border border-white/10 shrink-0">
+                      Primary
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Additional Slides (#2, #3, ...) */}
+              {contentFormData.slides && contentFormData.slides.length > 0 ? (
+                contentFormData.slides.map((slide, idx) => (
+                  <div
+                    key={slide.id || idx}
+                    className="flex items-center gap-3 p-2.5 rounded-2xl bg-[#121216] border border-white/10 hover:border-white/20 transition-all"
+                  >
+                    <span className="text-[11px] font-mono font-bold text-neutral-400 w-6 text-center shrink-0">
+                      #{idx + 2}
+                    </span>
+
+                    {/* Thumbnail preview */}
+                    <div className="w-14 h-11 rounded-lg overflow-hidden bg-neutral-900 border border-white/10 shrink-0 relative flex items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={resolveVideoPlayUrl(slide.image)}
+                        alt={`Slide ${idx + 2}`}
+                        className="w-full h-full object-cover"
+                      />
+                      {slide.type === 'video' && (
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <Play className="w-3.5 h-3.5 text-white fill-current" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Slide info & caption input */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full ${
+                            slide.type === 'video'
+                              ? 'bg-amber-400/10 text-amber-300 border border-amber-400/20'
+                              : 'bg-blue-400/10 text-blue-300 border border-blue-400/20'
+                          }`}
+                        >
+                          Slide #{idx + 2} • {slide.type === 'video' ? (slide.videoUrl && isYouTubeUrl(slide.videoUrl) ? 'Video (YouTube)' : 'Video (Device)') : 'Photo'}
+                        </span>
+                        <span className="text-[11px] text-neutral-400 font-sans truncate">
+                          {slide.caption || (slide.type === 'video' ? (slide.videoUrl && isYouTubeUrl(slide.videoUrl) ? 'YouTube Video' : 'Device Video') : 'Photo Slide')}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Caption for this slide..."
+                        value={slide.caption || ''}
+                        onChange={(e) => handleUpdateSlideCaption(idx, e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-white/30"
+                      />
+                    </div>
+
+                    {/* Re-order & Delete actions */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleMoveSlide(idx, 'up')}
+                        disabled={idx === 0}
+                        className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white disabled:opacity-20"
+                        title="Move Up"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveSlide(idx, 'down')}
+                        disabled={idx === (contentFormData.slides?.length || 0) - 1}
+                        className="p-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white disabled:opacity-20"
+                        title="Move Down"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSlide(idx)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-neutral-400 hover:text-red-400"
+                        title="Remove Slide"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-3 rounded-xl border border-dashed border-white/10 text-center">
+                  <span className="text-xs text-neutral-500 font-sans">
+                    No additional slides yet. Click &quot;Add Photo Slide&quot; or &quot;Add Video Slide&quot; above to create a multi-slide carousel.
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Category & Subcategory */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

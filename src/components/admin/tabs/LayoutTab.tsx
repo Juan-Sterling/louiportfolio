@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import {
   LayoutGrid,
@@ -17,6 +17,7 @@ import {
   Play,
   Layers,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import { AdminCategory } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
@@ -30,6 +31,7 @@ interface LayoutTabProps {
   selectedSubcategoryId?: string;
   onSubcategoryChange?: (subcatId: string) => void;
   onRefreshData?: () => Promise<void> | void;
+  onOptimisticUpdateItems?: (assignments: Record<number, string>, subcatId: string) => void;
   showToast: (message: string) => void;
 }
 
@@ -39,6 +41,7 @@ export default function LayoutTab({
   selectedSubcategoryId,
   onSubcategoryChange,
   onRefreshData,
+  onOptimisticUpdateItems,
   showToast,
 }: LayoutTabProps) {
   // Flatten all subcategories with their parent category info
@@ -111,8 +114,8 @@ export default function LayoutTab({
 
   // Slot assignments state: mapping slotNum (number) -> itemId (string)
   const [slotAssignments, setSlotAssignments] = useState<Record<number, string>>({});
-  // Total slots to display (minimum 6, expands in increments of 3: 6, 9, 12, etc.)
-  const [totalSlots, setTotalSlots] = useState<number>(6);
+  // Total slots to display (minimum 5: Row 1 has Slots 1 & 2; Row 2 has Slots 3, 4, 5)
+  const [totalSlots, setTotalSlots] = useState<number>(5);
   // Tracking if layout has unsaved modifications
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -125,9 +128,19 @@ export default function LayoutTab({
   // Total Reset confirmation modal state
   const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState<boolean>(false);
 
+  // Refs to guard against race-condition re-renders during active saves
+  const prevSubcatIdRef = useRef<string | null>(null);
+  const isSavingRef = useRef<boolean>(false);
+
   // Initialize or re-sync slot assignments whenever active subcategory or items change
   useEffect(() => {
     if (!activeSubcat) return;
+
+    // 1. If an auto-save or reset is currently in progress, DO NOT overwrite the optimistic state!
+    if (isSavingRef.current) return;
+
+    const isSubcatChanged = prevSubcatIdRef.current !== activeSubcat.id;
+    prevSubcatIdRef.current = activeSubcat.id;
 
     const initialMap: Record<number, string> = {};
     let maxAssignedSlot = 0;
@@ -141,17 +154,31 @@ export default function LayoutTab({
       }
     }
 
-    setSlotAssignments(initialMap);
-    setIsDirty(false);
-
-    // Compute appropriate total slots (minimum 6, expand in blocks of 3 if needed)
-    if (maxAssignedSlot <= 6) {
-      setTotalSlots(6);
+    if (isSubcatChanged) {
+      setSlotAssignments(initialMap);
+      setIsDirty(false);
     } else {
-      const extraRows = Math.ceil((maxAssignedSlot - 6) / 3);
-      setTotalSlots(6 + extraRows * 3);
+      // Avoid flicker: only update if initialMap truly differs from current slotAssignments
+      const currentKeys = Object.keys(slotAssignments);
+      const newKeys = Object.keys(initialMap);
+      const isIdentical =
+        currentKeys.length === newKeys.length &&
+        currentKeys.every((k) => slotAssignments[Number(k)] === initialMap[Number(k)]);
+
+      if (!isIdentical) {
+        setSlotAssignments(initialMap);
+        setIsDirty(false);
+      }
     }
-  }, [activeSubcat, subcategoryPublishedItems]);
+
+    // Compute appropriate total slots (minimum 5, expands in increments of 3)
+    if (maxAssignedSlot <= 5) {
+      setTotalSlots(5);
+    } else {
+      const extraRows = Math.ceil((maxAssignedSlot - 5) / 3);
+      setTotalSlots(5 + extraRows * 3);
+    }
+  }, [activeSubcat?.id, subcategoryPublishedItems]);
 
   // Helper to find MediaItem by ID from subcategoryPublishedItems
   const getItemById = (itemId: string): MediaItem | undefined => {
@@ -190,7 +217,13 @@ export default function LayoutTab({
     if (!activeSubcat) return;
 
     setIsSaving(true);
+    isSavingRef.current = true;
     try {
+      // 1. Immediately sync parent state in memory so subsequent re-renders have zero discrepancy
+      if (onOptimisticUpdateItems) {
+        onOptimisticUpdateItems(targetAssignments, activeSubcat.id);
+      }
+
       if (isSupabaseConfigured && supabase) {
         // Step 1: Purge stale indexes for this subcategory
         const { error: purgeError } = await supabase
@@ -242,6 +275,10 @@ export default function LayoutTab({
       showToast(error.message || 'An error occurred while auto-saving the layout');
     } finally {
       setIsSaving(false);
+      // Brief debounce so trailing parent re-renders don't clobber state
+      setTimeout(() => {
+        isSavingRef.current = false;
+      }, 150);
     }
   };
 
@@ -305,9 +342,14 @@ export default function LayoutTab({
     setSlotAssignments({});
     setIsDirty(false);
 
+    if (activeSubcat && onOptimisticUpdateItems) {
+      onOptimisticUpdateItems({}, activeSubcat.id);
+    }
+
     if (isSupabaseConfigured && supabase && activeSubcat) {
       try {
         setIsSaving(true);
+        isSavingRef.current = true;
         // Direct execute database purge for this subcategory
         const { error } = await supabase
           .from('contents')
@@ -327,6 +369,9 @@ export default function LayoutTab({
         showToast(error.message || 'Failed to reset layout');
       } finally {
         setIsSaving(false);
+        setTimeout(() => {
+          isSavingRef.current = false;
+        }, 150);
       }
     } else {
       showToast(`Layout for "${activeSubcat?.label}" restored to automatic.`);
@@ -351,11 +396,11 @@ export default function LayoutTab({
     });
   }, [subcategoryPublishedItems, selectorSearchQuery]);
 
-  // Calculate rows count: each row has 3 columns (Col 1, Col 2, Col 3)
-  // Row 1: Slot 1 (Col 1), Slot 2 (Col 2), Slot 3 (Col 3)
-  // Row 2: Slot 4 (Col 1), Slot 5 (Col 2), Slot 6 (Col 3)
-  // Row N: (N-1)*3 + 1, (N-1)*3 + 2, (N-1)*3 + 3
-  const rowCount = Math.max(2, Math.ceil(totalSlots / 3));
+  // Calculate rows count:
+  // Row 1: Description (Col 1), Slot 1 (Col 2), Slot 2 (Col 3)
+  // Row 2: Slot 3 (Col 1), Slot 4 (Col 2), Slot 5 (Col 3)
+  // Row N: (N-2)*3 + 3, (N-2)*3 + 4, (N-2)*3 + 5
+  const rowCount = Math.max(2, 1 + Math.ceil(Math.max(0, totalSlots - 2) / 3));
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -488,9 +533,53 @@ export default function LayoutTab({
         <div className="space-y-6">
           {Array.from({ length: rowCount }).map((_, rIdx) => {
             const rowNumber = rIdx + 1;
-            const s1 = rIdx * 3 + 1; // Col 1 (Left)
-            const s2 = rIdx * 3 + 2; // Col 2 (Center)
-            const s3 = rIdx * 3 + 3; // Col 3 (Right)
+
+            if (rIdx === 0) {
+              const s2 = 1; // Col 2 (Center)
+              const s3 = 2; // Col 3 (Right)
+
+              return (
+                <div key={rowNumber} className="space-y-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-neutral-400">
+                      ROW 1 (TOP)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                    {/* Column 1: Locked Editorial Card (Description) */}
+                    <LockedEditorialCard
+                      categoryLabel={activeSubcat?.categoryLabel}
+                      subcategoryLabel={activeSubcat?.label}
+                      description={activeSubcat?.description}
+                    />
+
+                    {/* Column 2: Slot #1 */}
+                    <SlotCard
+                      slotNum={s2}
+                      itemId={slotAssignments[s2]}
+                      item={getItemById(slotAssignments[s2])}
+                      subtext="Row 1 • Col 2 (Center)"
+                      onSelect={() => handleOpenSelector(s2)}
+                      onRemove={() => handleRemoveSlot(s2)}
+                    />
+
+                    {/* Column 3: Slot #2 */}
+                    <SlotCard
+                      slotNum={s3}
+                      itemId={slotAssignments[s3]}
+                      item={getItemById(slotAssignments[s3])}
+                      subtext="Row 1 • Col 3 (Right)"
+                      onSelect={() => handleOpenSelector(s3)}
+                      onRemove={() => handleRemoveSlot(s3)}
+                    />
+                  </div>
+                </div>
+              );
+            }
+
+            const s1 = (rIdx - 1) * 3 + 3; // Col 1 (Left)
+            const s2 = (rIdx - 1) * 3 + 4; // Col 2 (Center)
+            const s3 = (rIdx - 1) * 3 + 5; // Col 3 (Right)
 
             return (
               <div key={rowNumber} className="space-y-2">
@@ -598,13 +687,12 @@ export default function LayoutTab({
                     return (
                       <div
                         key={item.id}
-                        className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
-                          isTargetSlot
+                        className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-4 ${isTargetSlot
                             ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-500/30'
                             : isOccupiedElsewhere
-                            ? 'bg-white/[0.03] border-white/10 hover:border-white/20'
-                            : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/[0.07]'
-                        }`}
+                              ? 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                              : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/[0.07]'
+                          }`}
                       >
                         {/* Thumbnail & Info */}
                         <div className="flex items-center gap-3 min-w-0">
@@ -613,8 +701,8 @@ export default function LayoutTab({
                               src={
                                 getOptimizedCloudinaryUrl(
                                   (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                                    getYouTubeThumbnail(item.videoUrl) ||
-                                    'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
+                                  getYouTubeThumbnail(item.videoUrl) ||
+                                  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
                                   { width: 160 }
                                 )
                               }
@@ -777,21 +865,19 @@ function SlotCard({
 
   return (
     <div
-      className={`rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all min-h-[300px] border ${
-        isFilled
+      className={`rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all min-h-[300px] border ${isFilled
           ? 'bg-[#15151a] border-white/15 hover:border-white/30 shadow-xl'
           : 'bg-[#111115] border-dashed border-white/15 hover:border-amber-400/40 hover:bg-[#14141a]'
-      }`}
+        }`}
     >
       {/* Card Header */}
       <div className="flex items-center justify-between pb-3 border-b border-white/10">
         <div className="flex items-center gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
-              isFilled
+            className={`inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full ${isFilled
                 ? 'bg-amber-400 text-black shadow-md'
                 : 'bg-white/10 text-neutral-400'
-            }`}
+              }`}
           >
             <span>SLOT #{slotNum}</span>
           </span>
@@ -825,8 +911,8 @@ function SlotCard({
               src={
                 getOptimizedCloudinaryUrl(
                   (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                    getYouTubeThumbnail(item.videoUrl) ||
-                    'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
+                  getYouTubeThumbnail(item.videoUrl) ||
+                  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
                   { width: 600 }
                 )
               }
@@ -915,3 +1001,71 @@ function SlotCard({
     </div>
   );
 }
+
+// ==========================================================
+// SUB-COMPONENT: Locked Editorial Card (Public Description Space)
+// ==========================================================
+interface LockedEditorialCardProps {
+  categoryLabel?: string;
+  subcategoryLabel?: string;
+  description?: string;
+}
+
+function LockedEditorialCard({
+  categoryLabel,
+  subcategoryLabel,
+  description,
+}: LockedEditorialCardProps) {
+  return (
+    <div className="rounded-3xl p-5 sm:p-6 flex flex-col justify-between min-h-[300px] bg-[#121216] border border-amber-400/25 shadow-xl relative overflow-hidden select-none">
+      {/* Background glow */}
+      <div className="absolute -top-10 -left-10 w-28 h-28 bg-amber-400/5 rounded-full blur-2xl pointer-events-none" />
+
+      {/* Card Header */}
+      <div className="flex items-center justify-between pb-3 border-b border-white/10 relative z-10">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-neutral-800 text-amber-300 border border-amber-400/30">
+            <Lock className="w-3 h-3 text-amber-400" />
+            <span>DESCRIPTION</span>
+          </span>
+          <span className="text-[10px] font-mono text-neutral-400 hidden sm:inline">
+            • Row 1 • Col 1 (Top-Left)
+          </span>
+        </div>
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400/80 px-2 py-0.5 rounded bg-amber-400/10 border border-amber-400/20">
+          LOCKED
+        </span>
+      </div>
+
+      {/* Card Body */}
+      <div className="my-4 py-2 space-y-3 flex-1 flex flex-col justify-center relative z-10">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-neutral-400">
+              {categoryLabel || 'CATEGORY'} - {subcategoryLabel || 'SUBCATEGORY'}
+            </span>
+          </div>
+
+          <h3 className="font-heading font-black text-2xl uppercase tracking-tight text-white leading-tight">
+            {subcategoryLabel || 'SUBCATEGORY'}
+          </h3>
+
+          <p className="text-xs font-sans uppercase tracking-wider text-neutral-400 leading-relaxed max-w-sm line-clamp-4">
+            {description ? description : 'No description provided for this subcategory yet.'}
+          </p>
+        </div>
+      </div>
+
+      {/* Card Footer */}
+      <div className="pt-3 border-t border-white/10 relative z-10">
+        <div className="py-2.5 px-3 rounded-xl bg-white/5 border border-white/10 text-center">
+          <p className="text-[10px] font-mono text-neutral-400 leading-normal">
+            Permanent Editorial Space in Public Gallery
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+

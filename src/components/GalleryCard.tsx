@@ -2,9 +2,10 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { Play } from 'lucide-react';
+import { Play, Layers } from 'lucide-react';
 import {
   MediaItem,
+  getNormalizedSlides,
   getYouTubeThumbnail,
   getYouTubeVideoId,
 } from '@/data/portfolioData';
@@ -19,7 +20,6 @@ interface GalleryCardProps {
   isInitialEntrance?: boolean;
   onOpenLightbox: (index: number) => void;
   aspectRatio?: number;
-  isColumnBreak?: boolean;
 }
 
 function GalleryCard({
@@ -30,7 +30,6 @@ function GalleryCard({
   isInitialEntrance = true,
   onOpenLightbox,
   aspectRatio,
-  isColumnBreak = false,
 }: GalleryCardProps) {
   // Video preview states
   const [isPreviewActive, setIsPreviewActive] = useState<boolean>(false);
@@ -151,11 +150,7 @@ function GalleryCard({
   };
 
   return (
-    <div
-      className={`break-inside-avoid mb-6 md:mb-7 block w-full ${
-        isColumnBreak ? 'lg-break-before-column' : ''
-      }`}
-    >
+    <div className="break-inside-avoid mb-6 md:mb-7 block w-full">
       <div
         className={animationClass}
         style={{
@@ -324,6 +319,26 @@ function GalleryCard({
                 </div>
               </div>
             )}
+
+            {/* ========================================================= */}
+            {/* MULTI-SLIDE CAROUSEL INDICATOR PILL                      */}
+            {/* ========================================================= */}
+            {(() => {
+              const totalSlides = getNormalizedSlides(item).length;
+              if (totalSlides <= 1) return null;
+              return (
+                <div
+                  className={`absolute top-3.5 right-3.5 z-20 pointer-events-none transition-all duration-300 ${
+                    isPreviewActive ? 'opacity-0 scale-90' : 'opacity-100 scale-100'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-[10px] font-mono font-medium text-white/95 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/20 shadow-md">
+                    <Layers className="w-3 h-3 text-white/90" />
+                    <span>{totalSlides}</span>
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* ========================================================= */}
             {/* BOTTOM-LEFT TAG: SUBCATEGORY PILL                         */}

@@ -13,9 +13,12 @@ import {
   Pause,
   ExternalLink,
   LayoutGrid,
+  Layers,
 } from 'lucide-react';
 import {
   MediaItem,
+  MediaSlide,
+  getNormalizedSlides,
   getYouTubeEmbedUrl,
   getYouTubeThumbnail,
   isYouTubeUrl,
@@ -43,11 +46,26 @@ export default function MediaLightbox({
 }: MediaLightboxProps) {
   const currentItem = items[currentIndex];
 
+  // Effective slides for the active portfolio item, always ensuring the cover media is included as slide #1
+  const effectiveSlides = useMemo<MediaSlide[]>(() => {
+    return getNormalizedSlides(currentItem);
+  }, [currentItem]);
+
+  const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
+
+  // Reset slide index whenever switching between portfolio items
+  useEffect(() => {
+    setCurrentSlideIndex(0);
+  }, [currentIndex]);
+
+  const activeMedia = effectiveSlides[currentSlideIndex] || effectiveSlides[0] || null;
+  const isCurrentVideo = Boolean(activeMedia && activeMedia.type === 'video' && activeMedia.videoUrl);
+
   // Stable loaded image buffer: Holds the previously loaded image so transitions never flash black
   const [activeLoadedSrc, setActiveLoadedSrc] = useState<string>(
-    currentItem && currentItem.type !== 'video' ? currentItem.image : ''
+    activeMedia && !isCurrentVideo ? activeMedia.image : ''
   );
-  const prevItemRef = useRef<MediaItem | null>(currentItem);
+  const prevItemRef = useRef<MediaSlide | null>(activeMedia);
 
   // Bottom thumbnail strip visibility toggle
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
@@ -65,9 +83,9 @@ export default function MediaLightbox({
   // Dynamic video dimensions & aspect ratio
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
 
-  // Probe video poster/thumbnail image on mount or item change to pre-detect aspect ratio
+  // Probe video poster/thumbnail image on mount or item/slide change to pre-detect aspect ratio
   useEffect(() => {
-    if (!isOpen || !currentItem || currentItem.type !== 'video') {
+    if (!isOpen || !activeMedia || !isCurrentVideo) {
       setVideoDimensions(null);
       return;
     }
@@ -76,7 +94,7 @@ export default function MediaLightbox({
     let isCancelled = false;
 
     // 1. If explicit aspect string (e.g. "3:4", "9:16", "1:1", "16:9") is provided
-    if (currentItem.aspect) {
+    if (currentItem?.aspect) {
       const parts = currentItem.aspect.split(/[:/]/);
       if (parts.length === 2) {
         const w = parseFloat(parts[0]);
@@ -89,7 +107,7 @@ export default function MediaLightbox({
     }
 
     // 2. Probe thumbnail image to instantly obtain natural aspect ratio
-    const thumbUrl = currentItem.image || (currentItem.videoUrl ? getYouTubeThumbnail(currentItem.videoUrl) : '');
+    const thumbUrl = activeMedia.image || (activeMedia.videoUrl ? getYouTubeThumbnail(activeMedia.videoUrl) : '');
     if (thumbUrl) {
       const img = new window.Image();
       img.src = thumbUrl;
@@ -108,17 +126,17 @@ export default function MediaLightbox({
     return () => {
       isCancelled = true;
     };
-  }, [currentIndex, isOpen, currentItem]);
+  }, [currentIndex, currentSlideIndex, isOpen, activeMedia, isCurrentVideo, currentItem]);
 
   // Compute exact aspect ratio (width / height)
   const activeVideoRatio = useMemo(() => {
-    if (!currentItem || currentItem.type !== 'video') return 16 / 9;
+    if (!isCurrentVideo) return 16 / 9;
 
     if (videoDimensions && videoDimensions.width > 0 && videoDimensions.height > 0) {
       return Number((videoDimensions.width / videoDimensions.height).toFixed(4));
     }
 
-    if (currentItem.aspect) {
+    if (currentItem?.aspect) {
       const parts = currentItem.aspect.split(/[:/]/);
       if (parts.length === 2) {
         const w = parseFloat(parts[0]);
@@ -127,12 +145,12 @@ export default function MediaLightbox({
       }
     }
 
-    if (currentItem.videoUrl?.includes('/shorts/')) {
+    if (activeMedia?.videoUrl?.includes('/shorts/')) {
       return 9 / 16;
     }
 
     return 16 / 9;
-  }, [currentItem, videoDimensions]);
+  }, [isCurrentVideo, videoDimensions, currentItem, activeMedia]);
 
   // Single-click timer ref to cleanly separate single-click (toggle UI) from double-click (zoom)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -191,9 +209,9 @@ export default function MediaLightbox({
 
   // Toggle video playback via postMessage for YouTube or direct video element
   const toggleVideoPlayback = useCallback(() => {
-    if (!currentItem || currentItem.type !== 'video') return;
+    if (!activeMedia || !isCurrentVideo) return;
 
-    if (isYouTubeUrl(currentItem.videoUrl)) {
+    if (isYouTubeUrl(activeMedia.videoUrl)) {
       const iframe = videoIframeRef.current;
       if (!iframe || !iframe.contentWindow) return;
 
@@ -237,16 +255,35 @@ export default function MediaLightbox({
         setPlayPauseFeedback(null);
       }, 650);
     }
-  }, [currentItem]);
+  }, [activeMedia, isCurrentVideo]);
 
-  // Reset video play state on item or open change
+  // Reset video play state on item, slide, or open change, and handle direct video autoplay
   useEffect(() => {
     setIsVideoPlaying(true);
     isVideoPlayingRef.current = true;
     setPlayPauseFeedback(null);
-  }, [currentIndex, isOpen]);
 
-  // Sync active loaded image buffer when lightbox opens or closes
+    if (!isOpen || !activeMedia || !isCurrentVideo) return;
+    const timer = setTimeout(() => {
+      const vid = directVideoRef.current;
+      if (vid) {
+        const playPromise = vid.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // If browser autoplay policy blocks unmuted video, mute and play so movement starts
+            vid.muted = true;
+            vid.play().catch(() => {
+              setIsVideoPlaying(false);
+              isVideoPlayingRef.current = false;
+            });
+          });
+        }
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [currentIndex, currentSlideIndex, isOpen, activeMedia, isCurrentVideo]);
+
+  // Sync active loaded image buffer when lightbox opens or activeMedia changes
   useEffect(() => {
     if (!isOpen) {
       setActiveLoadedSrc('');
@@ -256,29 +293,37 @@ export default function MediaLightbox({
         clearTimeout(clickTimeoutRef.current);
         clickTimeoutRef.current = null;
       }
-    } else if (currentItem && currentItem.type !== 'video' && !activeLoadedSrc) {
-      setActiveLoadedSrc(currentItem.image);
-      prevItemRef.current = currentItem;
+    } else if (activeMedia && !isCurrentVideo && !activeLoadedSrc) {
+      setActiveLoadedSrc(activeMedia.image);
+      prevItemRef.current = activeMedia;
     }
-  }, [isOpen, currentItem, activeLoadedSrc]);
+  }, [isOpen, activeMedia, isCurrentVideo, activeLoadedSrc]);
 
   // Navigation handlers with instant response and zoom reset
   const handlePrev = useCallback(() => {
     resetZoom();
-    const newIdx = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
-    onNavigate(newIdx);
-  }, [currentIndex, items, onNavigate, resetZoom]);
+    if (currentSlideIndex > 0) {
+      setCurrentSlideIndex((prev) => prev - 1);
+    } else {
+      const newIdx = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+      onNavigate(newIdx);
+    }
+  }, [currentSlideIndex, currentIndex, items.length, onNavigate, resetZoom]);
 
   const handleNext = useCallback(() => {
     resetZoom();
-    const newIdx = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
-    onNavigate(newIdx);
-  }, [currentIndex, items, onNavigate, resetZoom]);
+    if (currentSlideIndex < effectiveSlides.length - 1) {
+      setCurrentSlideIndex((prev) => prev + 1);
+    } else {
+      const newIdx = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+      onNavigate(newIdx);
+    }
+  }, [currentSlideIndex, effectiveSlides.length, currentIndex, items.length, onNavigate, resetZoom]);
 
-  // Reset zoom on item or open status change
+  // Reset zoom on item, slide, or open status change
   useEffect(() => {
     resetZoom();
-  }, [currentIndex, isOpen, resetZoom]);
+  }, [currentIndex, currentSlideIndex, isOpen, resetZoom]);
 
   // Proactive preloading of adjacent images (Next 4, Prev 2)
   useEffect(() => {
@@ -411,16 +456,16 @@ export default function MediaLightbox({
 
   // Zoom step handlers
   const handleZoomIn = useCallback(() => {
-    if (currentItem?.type === 'video') return;
+    if (isCurrentVideo) return;
     setScale((prev) => {
       const next = Math.min(4, Number((prev + 0.5).toFixed(2)));
       scaleRef.current = next;
       return next;
     });
-  }, [currentItem]);
+  }, [isCurrentVideo]);
 
   const handleZoomOut = useCallback(() => {
-    if (currentItem?.type === 'video') return;
+    if (isCurrentVideo) return;
     setScale((prev) => {
       const next = Math.max(1, Number((prev - 0.5).toFixed(2)));
       scaleRef.current = next;
@@ -444,7 +489,7 @@ export default function MediaLightbox({
       }
       return next;
     });
-  }, [currentItem]);
+  }, [isCurrentVideo]);
 
   const lastToggleTimestampRef = useRef<number>(0);
 
@@ -472,7 +517,7 @@ export default function MediaLightbox({
       return;
     }
 
-    if (currentItem?.type === 'video') {
+    if (isCurrentVideo) {
       toggleOverlayControls();
       return;
     }
@@ -496,7 +541,7 @@ export default function MediaLightbox({
       clearTimeout(clickTimeoutRef.current);
       clickTimeoutRef.current = null;
     }
-    if (currentItem?.type === 'video') return;
+    if (isCurrentVideo) return;
 
     if (scale > 1) {
       resetZoom();
@@ -533,7 +578,7 @@ export default function MediaLightbox({
     if (!container || !isOpen) return;
 
     const onWheel = (e: WheelEvent) => {
-      if (currentItem?.type === 'video') return;
+      if (isCurrentVideo) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -566,12 +611,12 @@ export default function MediaLightbox({
     return () => {
       container.removeEventListener('wheel', onWheel);
     };
-  }, [isOpen, currentItem]);
+  }, [isOpen, isCurrentVideo]);
 
   // Start mouse drag on container
   const handleMouseDown = (e: React.MouseEvent) => {
     backdropMouseDownRef.current = false;
-    if (currentItem?.type === 'video') return;
+    if (isCurrentVideo) return;
     if (scale <= 1) return;
     if (e.button !== 0) return; // Only left click
 
@@ -678,7 +723,7 @@ export default function MediaLightbox({
         time: Date.now(),
       };
 
-      if (currentItem?.type !== 'video' && scale > 1) {
+      if (!isCurrentVideo && scale > 1) {
         setIsDragging(true);
         isDraggingRef.current = true;
         dragStartRef.current = {
@@ -686,7 +731,7 @@ export default function MediaLightbox({
           y: e.touches[0].clientY - panRef.current.y,
         };
       }
-    } else if (e.touches.length === 2 && currentItem?.type !== 'video') {
+    } else if (e.touches.length === 2 && !isCurrentVideo) {
       // 2 fingers: Start pinch-to-zoom
       setIsDragging(true);
       isDraggingRef.current = true;
@@ -700,7 +745,7 @@ export default function MediaLightbox({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (currentItem?.type === 'video') return;
+    if (isCurrentVideo) return;
 
     // Pinch-to-zoom handling
     if (e.touches.length === 2 && pinchStartDistRef.current) {
@@ -893,9 +938,9 @@ export default function MediaLightbox({
           backdropMouseDownRef.current = false;
         }}
       >
-        {/* Left: Category Badge & Counter */}
+        {/* Left: Category Badge, Counter & Slide Indicator */}
         <div className="flex flex-col gap-1 min-w-0 pr-2">
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-white/90 bg-white/10 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full border border-white/15 backdrop-blur-md truncate max-w-[180px] sm:max-w-none">
               <span className="hidden sm:inline">{currentItem.categoryLabel} • </span>
               <span>{currentItem.subcategoryLabel}</span>
@@ -903,11 +948,18 @@ export default function MediaLightbox({
             <span className="text-[11px] sm:text-xs font-mono text-white/60 tracking-wider shrink-0 font-medium">
               {String(currentIndex + 1).padStart(2, '0')} / {String(items.length).padStart(2, '0')}
             </span>
+
+            {effectiveSlides.length > 1 && (
+              <span className="text-[11px] sm:text-xs font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full tracking-wider shrink-0 font-medium flex items-center gap-1.5 shadow-sm">
+                <Layers className="w-3 h-3 text-emerald-300" />
+                <span>Slide {currentSlideIndex + 1}/{effectiveSlides.length}</span>
+              </span>
+            )}
           </div>
 
-          {currentItem.description && (
+          {(activeMedia?.caption || currentItem.description) && (
             <p className="text-[10px] sm:text-xs font-medium uppercase tracking-[0.12em] text-neutral-400 font-sans pl-1 line-clamp-1 hidden md:block">
-              {currentItem.description}
+              {activeMedia?.caption || currentItem.description}
             </p>
           )}
         </div>
@@ -934,7 +986,7 @@ export default function MediaLightbox({
           )}
 
           {/* Zoom Controls Pill for Photos */}
-          {currentItem.type !== 'video' && (
+          {activeMedia && !isCurrentVideo && (
             <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 rounded-full bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/15 transition-all text-white">
               <button
                 onClick={handleZoomOut}
@@ -968,11 +1020,11 @@ export default function MediaLightbox({
           )}
 
           {/* Open Link for Video: Only for YouTube */}
-          {currentItem.type === 'video' &&
-            currentItem.videoUrl &&
-            isYouTubeUrl(currentItem.videoUrl) && (
+          {isCurrentVideo &&
+            activeMedia?.videoUrl &&
+            isYouTubeUrl(activeMedia.videoUrl) && (
               <a
-                href={currentItem.videoUrl}
+                href={activeMedia.videoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full bg-white/10 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-200 border border-white/15 shrink-0"
@@ -997,7 +1049,7 @@ export default function MediaLightbox({
       </div>
 
       {/* Navigation Left Arrow */}
-      {items.length > 1 && (
+      {(items.length > 1 || effectiveSlides.length > 1) && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1008,7 +1060,7 @@ export default function MediaLightbox({
               ? 'opacity-100 translate-x-0 pointer-events-auto'
               : 'opacity-0 -translate-x-6 pointer-events-none'
           }`}
-          aria-label="Previous Photo (Arrow Left)"
+          aria-label="Previous (Arrow Left)"
           title="Previous (←)"
         >
           <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -1016,7 +1068,7 @@ export default function MediaLightbox({
       )}
 
       {/* Navigation Right Arrow */}
-      {items.length > 1 && (
+      {(items.length > 1 || effectiveSlides.length > 1) && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1027,7 +1079,7 @@ export default function MediaLightbox({
               ? 'opacity-100 translate-x-0 pointer-events-auto'
               : 'opacity-0 translate-x-6 pointer-events-none'
           }`}
-          aria-label="Next Photo (Arrow Right)"
+          aria-label="Next (Arrow Right)"
           title="Next (→)"
         >
           <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -1050,25 +1102,25 @@ export default function MediaLightbox({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {currentItem.type === 'video' ? (
+        {isCurrentVideo ? (
           /* Video Modal Player (YouTube or Direct Cloudflare R2 / MP4) */
           <div
-            key={currentItem.id || currentIndex}
+            key={activeMedia?.id || `${currentIndex}-${currentSlideIndex}`}
             style={{
               aspectRatio: `${activeVideoRatio}`,
               maxWidth: `min(94vw, calc(${showThumbnails ? 'calc(100vh - 165px)' : 'calc(100vh - 95px)'} * ${activeVideoRatio}), 1450px)`,
             }}
             className="relative w-full max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center mx-auto transition-all duration-300"
           >
-            {isYouTubeUrl(currentItem.videoUrl) ? (
+            {activeMedia?.videoUrl && isYouTubeUrl(activeMedia.videoUrl) ? (
               <>
                 <iframe
                   ref={videoIframeRef}
                   src={
-                    getYouTubeEmbedUrl(currentItem.videoUrl) ||
+                    getYouTubeEmbedUrl(activeMedia.videoUrl) ||
                     'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
                   }
-                  title={currentItem.subcategoryLabel || 'YouTube Video Player'}
+                  title={activeMedia.caption || currentItem.subcategoryLabel || 'YouTube Video Player'}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                   className="w-full h-full object-cover"
@@ -1133,8 +1185,8 @@ export default function MediaLightbox({
               >
                 <video
                   ref={directVideoRef}
-                  src={resolveVideoPlayUrl(currentItem.videoUrl)}
-                  poster={currentItem.image || undefined}
+                  src={resolveVideoPlayUrl(activeMedia?.videoUrl || '')}
+                  poster={activeMedia?.image || undefined}
                   controls
                   controlsList="nodownload noplaybackrate"
                   disablePictureInPicture
@@ -1197,7 +1249,7 @@ export default function MediaLightbox({
             >
               {/* Seamless Underlay: Previous image stays 100% visible underneath while incoming image paints */}
               {activeLoadedSrc &&
-                activeLoadedSrc !== currentItem.image &&
+                activeLoadedSrc !== activeMedia?.image &&
                 prevItemRef.current?.type !== 'video' && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                     <Image
@@ -1216,8 +1268,8 @@ export default function MediaLightbox({
               {/* Active High-Performance Image */}
               <div className="relative w-full h-full flex items-center justify-center z-10">
                 <Image
-                  src={getOptimizedCloudinaryUrl(currentItem.image, { width: 2400 })}
-                  alt={currentItem.subcategoryLabel || 'Portfolio Image'}
+                  src={getOptimizedCloudinaryUrl(activeMedia?.image || currentItem.image, { width: 2400 })}
+                  alt={activeMedia?.caption || currentItem.subcategoryLabel || 'Portfolio Image'}
                   fill
                   priority
                   unoptimized
@@ -1225,8 +1277,10 @@ export default function MediaLightbox({
                   className="object-contain pointer-events-none select-none"
                   draggable={false}
                   onLoad={() => {
-                    setActiveLoadedSrc(currentItem.image);
-                    prevItemRef.current = currentItem;
+                    if (activeMedia?.image) {
+                      setActiveLoadedSrc(activeMedia.image);
+                      prevItemRef.current = activeMedia;
+                    }
                   }}
                 />
               </div>
@@ -1234,6 +1288,74 @@ export default function MediaLightbox({
           </div>
         )}
       </div>
+
+      {/* Multi-Slide Carousel Controls & Dots */}
+      {effectiveSlides.length > 1 && showOverlayControls && (
+        <div
+          className={`absolute left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300 ${
+            showThumbnails && items.length > 1
+              ? 'bottom-20 sm:bottom-24'
+              : 'bottom-4 sm:bottom-6'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (currentSlideIndex > 0) {
+                resetZoom();
+                setCurrentSlideIndex((p) => p - 1);
+              }
+            }}
+            disabled={currentSlideIndex === 0}
+            className="p-1 rounded-full text-white/70 hover:text-white disabled:opacity-25 transition-all"
+            title="Previous Slide"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <div className="flex items-center gap-1.5 px-1">
+            {effectiveSlides.map((slide, sIdx) => (
+              <button
+                key={slide.id || sIdx}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resetZoom();
+                  setCurrentSlideIndex(sIdx);
+                }}
+                className={`transition-all rounded-full ${
+                  sIdx === currentSlideIndex
+                    ? 'w-6 h-2 bg-white'
+                    : 'w-2 h-2 bg-white/40 hover:bg-white/80'
+                }`}
+                title={`Slide ${sIdx + 1}${slide.caption ? `: ${slide.caption}` : ''}`}
+              />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (currentSlideIndex < effectiveSlides.length - 1) {
+                resetZoom();
+                setCurrentSlideIndex((p) => p + 1);
+              }
+            }}
+            disabled={currentSlideIndex === effectiveSlides.length - 1}
+            className="p-1 rounded-full text-white/70 hover:text-white disabled:opacity-25 transition-all"
+            title="Next Slide"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+
+          <span className="text-[11px] font-mono text-white/70 pl-2 border-l border-white/20 shrink-0">
+            {currentSlideIndex + 1} / {effectiveSlides.length}
+          </span>
+        </div>
+      )}
 
       {/* Bottom Thumbnail Filmstrip: Fully Scrollable & Interactive */}
       {items.length > 1 && (
@@ -1312,6 +1434,11 @@ export default function MediaLightbox({
                     {item.type === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
                         <Play className="w-3 h-3 text-white fill-current" />
+                      </div>
+                    )}
+                    {item.slides && item.slides.length > 1 && (
+                      <div className="absolute top-1 right-1 pointer-events-none">
+                        <Layers className="w-2.5 h-2.5 text-white/90 drop-shadow" />
                       </div>
                     )}
                   </button>

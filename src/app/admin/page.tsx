@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, RefreshCw } from 'lucide-react';
 import {
@@ -200,26 +200,56 @@ export default function AdminPage() {
     }
   }, [router]);
 
-  // Load Categories, Subcategories & Contents from Database
+  // Load Categories, Subcategories & Contents from Database concurrently & atomically
   const loadDatabaseData = async () => {
     if (!isSupabaseConfigured || !supabase) return;
     try {
-      // 1. Fetch categories ordered by order_index
-      const { data: catRows } = await supabase
-        .from('categories')
-        .select('*')
-        .order('order_index', { ascending: true })
-        .order('created_at', { ascending: true });
+      const [catRes, subcatRes, contentRes] = await Promise.all([
+        supabase
+          .from('categories')
+          .select('*')
+          .order('order_index', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('subcategories')
+          .select('*')
+          .order('order_index', { ascending: true })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('contents')
+          .select(`
+            id,
+            description,
+            subcategory_id,
+            image_url,
+            type,
+            video_url,
+            status,
+            order_index,
+            slides,
+            created_at,
+            subcategories:subcategory_id (
+              id,
+              label,
+              status,
+              categories:category_id (
+                id,
+                label,
+                status
+              )
+            )
+          `)
+          .order('order_index', { ascending: true })
+          .order('created_at', { ascending: false }),
+      ]);
 
-      // 2. Fetch subcategories ordered by order_index
-      const { data: subcatRows } = await supabase
-        .from('subcategories')
-        .select('*')
-        .order('order_index', { ascending: true })
-        .order('created_at', { ascending: true });
+      const catRows = catRes.data;
+      const subcatRows = subcatRes.data;
+      const dbContents = contentRes.data;
 
+      let structured: AdminCategory[] = [];
       if (catRows) {
-        const structured: AdminCategory[] = [...catRows]
+        structured = [...catRows]
           .sort((a, b) => {
             const orderA = typeof a.order_index === 'number' ? a.order_index : 9999;
             const orderB = typeof b.order_index === 'number' ? b.order_index : 9999;
@@ -246,41 +276,12 @@ export default function AdminPage() {
                 status: (s.status || 'published') as 'published' | 'archived',
               })),
           }));
-        setCategoriesList(structured);
-      } else {
-        setCategoriesList([]);
       }
 
-      // 3. Fetch contents
-      const { data: dbContents } = await supabase
-        .from('contents')
-        .select(`
-          id,
-          description,
-          subcategory_id,
-          image_url,
-          type,
-          video_url,
-          status,
-          order_index,
-          created_at,
-          subcategories:subcategory_id (
-            id,
-            label,
-            status,
-            categories:category_id (
-              id,
-              label,
-              status
-            )
-          )
-        `)
-        .order('order_index', { ascending: true })
-        .order('created_at', { ascending: false });
-
+      let mapped: MediaItem[] = [];
       if (dbContents) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mapped: MediaItem[] = dbContents.map((d: any) => ({
+        mapped = dbContents.map((d: any) => ({
           id: d.id,
           category: (d.subcategories?.categories?.label?.toLowerCase().replace(/\s+/g, '-') ||
             'photography') as MainCategory,
@@ -293,15 +294,37 @@ export default function AdminPage() {
           videoUrl: d.video_url || undefined,
           status: (d.status || 'published') as 'draft' | 'published' | 'archived',
           order_index: d.order_index ?? 0,
+          created_at: d.created_at,
+          slides: Array.isArray(d.slides) ? d.slides : undefined,
         }));
-        setItems(mapped);
-      } else {
-        setItems([]);
       }
+
+      // Batch state updates atomically so intermediate stale states never render
+      setCategoriesList(structured);
+      setItems(mapped);
     } catch (err) {
       console.warn('Sync notice:', err);
     }
   };
+
+  // Immediate in-memory optimistic update for layout slot assignments
+  const handleOptimisticUpdateLayout = useCallback(
+    (assignments: Record<number, string>, subcatId: string) => {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (item.subcategory !== subcatId) return item;
+          const assignedEntry = Object.entries(assignments).find(([_, id]) => id === item.id);
+          const newOrderIndex = assignedEntry ? parseInt(assignedEntry[0], 10) : 0;
+          if (item.order_index === newOrderIndex) return item;
+          return {
+            ...item,
+            order_index: newOrderIndex,
+          };
+        })
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     loadDatabaseData();
@@ -652,6 +675,7 @@ export default function AdminPage() {
       image: '',
       videoUrl: '',
       status: 'published',
+      slides: [],
     });
     sessionUploadedImagesRef.current = [];
     sessionUploadedVideosRef.current = [];
@@ -691,6 +715,7 @@ export default function AdminPage() {
       image: item.image || '',
       videoUrl: item.type === 'video' ? item.videoUrl || '' : '',
       status: item.status || 'published',
+      slides: item.slides ? [...item.slides] : [],
     });
     setIsContentModalOpen(true);
   };
@@ -730,13 +755,13 @@ export default function AdminPage() {
       // If in video mode, upload thumbnail to Cloudflare R2; otherwise photo to Cloudinary
       let uploadedUrl = '';
       if (contentFormData.type === 'video') {
-        setUploadStatusText('Uploading thumbnail to Cloudflare...');
+        setUploadStatusText('Uploading thumbnail...');
         const res = await uploadToR2(file);
         uploadedUrl = res.url;
-        setUploadStatusText('Verifying thumbnail in Cloudflare R2...');
+        setUploadStatusText('Verifying thumbnail...');
         const verified = await verifyR2Media(uploadedUrl);
         if (!verified) {
-          throw new Error('Thumbnail upload verification failed in Cloudflare R2.');
+          throw new Error('Thumbnail upload verification failed.');
         }
       } else {
         const res = await uploadToCloudinary(file);
@@ -747,7 +772,7 @@ export default function AdminPage() {
       setContentFormData((prev) => ({ ...prev, image: uploadedUrl }));
       showToast(
         contentFormData.type === 'video'
-          ? 'Thumbnail uploaded to Cloudflare successfully!'
+          ? 'Thumbnail uploaded successfully!'
           : 'Image uploaded successfully!'
       );
     } catch (err: unknown) {
@@ -793,7 +818,7 @@ export default function AdminPage() {
 
     setUploadingMedia(true);
     setUploadProgress(0);
-    setUploadStatusText('Uploading video to Cloudflare...');
+    setUploadStatusText('Uploading video...');
 
     try {
       // 1. Clean up previously uploaded video in this unconfirmed session
@@ -832,7 +857,7 @@ export default function AdminPage() {
       setUploadStatusText('Extracting cover thumbnail from video...');
       try {
         const thumbFile = await captureVideoFrame(file, 1);
-        setUploadStatusText('Uploading thumbnail to Cloudflare...');
+        setUploadStatusText('Uploading thumbnail...');
         const thumbRes = await uploadToR2(thumbFile);
         thumbResUrl = thumbRes.url;
         sessionUploadedImagesRef.current.push(thumbRes.url);
@@ -844,17 +869,17 @@ export default function AdminPage() {
         console.warn('Auto cover capture skipped:', frameErr);
       }
 
-      // 5. Immediate verification: Ensure video and thumbnail are confirmed in R2
-      setUploadStatusText('Verifying media in Cloudflare R2...');
+      // 5. Immediate verification: Ensure video and thumbnail are confirmed
+      setUploadStatusText('Verifying media files...');
       const urlsToCheck = [res.url, thumbResUrl].filter(Boolean);
       const verifyCheck = await verifyMultipleR2Media(urlsToCheck);
       if (!verifyCheck.allExist) {
         throw new Error(
-          `Upload verification failed: file not confirmed in Cloudflare R2 (${verifyCheck.missingKeys.join(', ')}). Please try again.`
+          `Upload verification failed: file could not be verified (${verifyCheck.missingKeys.join(', ')}). Please try again.`
         );
       }
 
-      showToast('Video and thumbnail uploaded successfully to Cloudflare!');
+      showToast('Video and thumbnail uploaded successfully!');
     } catch (err: unknown) {
       const error = err as Error;
       showToast(error.message || 'Failed to upload video');
@@ -1017,6 +1042,7 @@ export default function AdminPage() {
         type: contentFormData.type,
         video_url: finalVideoUrl,
         status: contentFormData.status,
+        slides: contentFormData.slides && contentFormData.slides.length > 0 ? contentFormData.slides : [],
       };
 
       // Pre-commit Verification (Solusi B): Verify physical existence of R2 media files before writing to Supabase
@@ -1028,12 +1054,19 @@ export default function AdminPage() {
         filesToVerify.push(finalImage);
       }
 
+      if (contentFormData.slides && contentFormData.slides.length > 0) {
+        contentFormData.slides.forEach((s) => {
+          if (s.videoUrl && isCloudflareR2Url(s.videoUrl)) filesToVerify.push(s.videoUrl);
+          if (s.image && isCloudflareR2Url(s.image)) filesToVerify.push(s.image);
+        });
+      }
+
       if (filesToVerify.length > 0) {
-        setUploadStatusText('Verifying media files in Cloudflare R2...');
+        setUploadStatusText('Verifying media files...');
         const { allExist, missingKeys } = await verifyMultipleR2Media(filesToVerify);
         if (!allExist) {
           showToast(
-            `Save aborted: Media file is missing or failed to upload to Cloudflare R2 (${missingKeys.join(', ')}). Please re-upload before saving.`
+            `Save aborted: Media file is missing or failed to upload (${missingKeys.join(', ')}). Please re-upload before saving.`
           );
           return;
         }
@@ -1847,6 +1880,7 @@ export default function AdminPage() {
               selectedSubcategoryId={selectedLayoutSubcategoryId}
               onSubcategoryChange={setSelectedLayoutSubcategoryId}
               onRefreshData={loadDatabaseData}
+              onOptimisticUpdateItems={handleOptimisticUpdateLayout}
               showToast={showToast}
             />
           )}

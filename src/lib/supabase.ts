@@ -50,6 +50,7 @@ export interface DBContent {
   aspect: string;
   status: 'draft' | 'published' | 'archived';
   order_index?: number;
+  slides?: any[];
   created_at: string;
   updated_at: string;
   subcategories?: DBSubcategory & {

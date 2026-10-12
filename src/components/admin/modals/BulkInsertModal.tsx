@@ -326,11 +326,11 @@ export default function BulkInsertModal({
           });
           uploadedVideoUrl = r2Res.url;
 
-          // 2. Auto extract frame as cover poster and upload to Cloudflare R2
+          // 2. Auto extract frame as cover poster
           setOverallStatusText(`Extracting thumbnail for ${item.name}...`);
           try {
             const posterFile = await captureVideoFrame(item.file, 1);
-            setOverallStatusText(`Uploading thumbnail for ${item.name} to Cloudflare...`);
+            setOverallStatusText(`Uploading thumbnail for ${item.name}...`);
             const posterRes = await uploadToR2(posterFile);
             uploadedImageUrl = posterRes.url;
           } catch (frameErr) {
@@ -338,7 +338,7 @@ export default function BulkInsertModal({
             uploadedImageUrl = '';
           }
         } else {
-          // Upload Image to Cloudinary
+          // Upload Image
           setQueue((prev) =>
             prev.map((q, idx) => (idx === i ? { ...q, progress: 40 } : q))
           );
@@ -346,15 +346,15 @@ export default function BulkInsertModal({
           uploadedImageUrl = cldRes.url;
         }
 
-        // Pre-commit verification (Solusi B) for R2 uploads
+        // Pre-commit verification for uploaded files
         if (item.type === 'video') {
           const filesToCheck = [uploadedVideoUrl, uploadedImageUrl].filter(Boolean) as string[];
           if (filesToCheck.length > 0) {
-            setOverallStatusText(`Verifying ${item.name} in Cloudflare R2...`);
+            setOverallStatusText(`Verifying media files for ${item.name}...`);
             const { allExist, missingKeys } = await verifyMultipleR2Media(filesToCheck);
             if (!allExist) {
               throw new Error(
-                `Upload verification failed: file not confirmed in Cloudflare R2 (${missingKeys.join(', ')}). Aborting record creation.`
+                `Upload verification failed: file could not be verified (${missingKeys.join(', ')}). Aborting record creation.`
               );
             }
           }

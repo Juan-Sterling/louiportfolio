@@ -34,62 +34,120 @@ export interface GalleryCategory {
 }
 
 
-/**
- * Distributes gallery items across 3 masonry columns proportionally & stably:
- * 1. The NEWEST item is ALWAYS placed at top-left (Bucket 0, index 0).
- * 2. Videos are distributed in chronological order round-robin across all 3 columns
- *    so videos are evenly spaced and NEVER clump together.
- * 3. Photos across subcategories are distributed in chronological order (FIFO)
- *    into the least-filled columns so subcategories are evenly divided.
- * 4. Inside each column, subcategories and media types are interleaved stably
- *    (e.g., 2-3 photos per video) so videos and photos alternate smoothly down each column.
- * 5. 100% deterministic & shuffle-free: items NEVER scramble or jump randomly between columns
- *    when navigating categories or subcategories!
- */
-/**
- * Custom Showcase Spatial Slot Mapper:
- * Returns the CSS 3-column masonry bucket index (0 = Left, 1 = Center, 2 = Right)
- * for a given deterministic slot number.
- *
- * Blueprint Layout Matrix (PRD Section 4 & 5):
- * Row 1: Col 1 = Editorial Text (DOM child 0), Col 2 = Slot #1 (Bucket 1), Col 3 = Slot #2 (Bucket 2)
- * Row 2: Col 1 = Slot #3 (Bucket 0), Col 2 = Slot #4 (Bucket 1), Col 3 = Slot #5 (Bucket 2)
- * Row 3: Col 1 = Slot #6 (Bucket 0), Col 2 = Slot #7 (Bucket 1), Col 3 = Slot #8 (Bucket 2)
- * Row N: Col 1 = Slot 3 + (N-2)*3, Col 2 = Slot 4 + (N-2)*3, Col 3 = Slot 5 + (N-2)*3
- */
-function getBucketIndexForSlot(slotNum: number): number {
-  if (slotNum === 1) return 1; // Col 2, Row 1
-  if (slotNum === 2) return 2; // Col 3, Row 1
-  return (slotNum - 3) % 3;    // Slot 3->0 (Col 1), Slot 4->1 (Col 2), Slot 5->2 (Col 3), etc.
+export interface DistributedColumns {
+  columns: MediaItem[][];
+  flatItems: MediaItem[];
 }
 
 /**
- * Default balanced distribution for items when no custom slots are configured.
+ * Helper to compute an item's rendered vertical pixel height (including margin gap mb-6/7).
  */
-function distributeDefaultBalanced(items: MediaItem[]): MediaItem[] {
-  if (!items || items.length <= 1) return items;
+function getItemRenderHeight(item: MediaItem, aspectRatios?: Record<string, number>): number {
+  const colWidth = 376;
+  const colGap = 28; // mb-6 md:mb-7
+  let aspect = 0.8; // Default 4:5 portrait
 
-  const total = items.length;
+  if (aspectRatios && aspectRatios[item.id] && aspectRatios[item.id] > 0) {
+    aspect = aspectRatios[item.id];
+  } else if (item.aspect) {
+    const parts = item.aspect.split(/[:/]/);
+    if (parts.length === 2) {
+      const w = parseFloat(parts[0]);
+      const h = parseFloat(parts[1]);
+      if (w > 0 && h > 0) aspect = w / h;
+    }
+  } else if (item.type === 'video') {
+    aspect = 0.8;
+  }
+
+  // Constrain to reasonable bounds
+  aspect = Math.max(0.4, Math.min(4.0, aspect));
+  return (colWidth / aspect) + colGap;
+}
+
+/**
+ * Distributes gallery items deterministically across 3 masonry columns with balanced vertical height:
+ * 1. Works with order_index > 0 are assigned to exact slot positions:
+ *    - Slot 1: Column 2 (Center Top)
+ *    - Slot 2: Column 3 (Right Top)
+ *    - Slot 3: Column 1 (Left, under editorial description)
+ *    - Slot 4: Column 2 (Center, below Slot 1)
+ *    - Slot 5: Column 3 (Right, below Slot 2)
+ *    - Slot 6: Column 1 (Left, below Slot 3)
+ *    - and so on (order_index % 3: 1 -> Col 1, 2 -> Col 2, 0 -> Col 0).
+ * 2. Unslotted works (order_index === 0) follow the commit ffde2026 distribution:
+ *    - If no works are slotted, the newest work is placed at top-left.
+ *    - Videos are distributed across columns round-robin / least-videos so they never clump.
+ *    - Photos across subcategories are distributed to balance vertical column height so all
+ *      columns end cleanly and no column leaves an empty hole at the bottom.
+ *    - Inside each column, photos and videos are interleaved smoothly.
+ * 3. Returns { columns, flatItems } where columns provides the 3 deterministic columns,
+ *    and flatItems provides the sequential order for mobile and lightbox.
+ */
+export function distributeGalleryColumns(
+  items: MediaItem[],
+  aspectRatios?: Record<string, number>,
+  hasDescription: boolean = true
+): DistributedColumns {
+  if (!items || items.length === 0) {
+    return { columns: [[], [], []], flatItems: [] };
+  }
+
   const numCols = 3;
-  const chunkSizes = [
-    Math.ceil(total / numCols),
-    Math.ceil((total - Math.ceil(total / numCols)) / 2),
-    total - Math.ceil(total / numCols) - Math.ceil((total - Math.ceil(total / numCols)) / 2),
-  ];
+  const total = items.length;
+  // Column 0 editorial statement description card height (~200px)
+  const descHeight = hasDescription ? 200 : 0;
+  const columns: MediaItem[][] = [[], [], []];
+  const slottedByCol: MediaItem[][] = [[], [], []];
+  const colHeights = [descHeight, 0, 0];
 
-  const newestItem = items[0];
-  const remaining = items.slice(1);
+  // Slotted items: order_index > 0 sorted by order_index ascending
+  const slottedItems = items
+    .filter((i) => (i.order_index ?? 0) > 0)
+    .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
 
-  const buckets: MediaItem[][] = [[], [], []];
+  // Map each slotted item to its exact column based on slot index:
+  // Slot 1 -> Col 1 (Center Top)
+  // Slot 2 -> Col 2 (Right Top)
+  // Slot 3 -> Col 0 (Left, under Description)
+  // Slot 4 -> Col 1 (Center, below Slot 1)
+  // Slot 5 -> Col 2 (Right, below Slot 2)
+  // Slot 6 -> Col 0 (Left, below Slot 3)
+  // Formula: (order_index % 3): 1 -> Col 1, 2 -> Col 2, 0 -> Col 0
+  for (const item of slottedItems) {
+    const colIdx = (item.order_index ?? 0) % numCols;
+    slottedByCol[colIdx].push(item);
+    columns[colIdx].push(item);
+    colHeights[colIdx] += getItemRenderHeight(item, aspectRatios);
+  }
 
-  // Bucket 0 (Left Column) ALWAYS gets the newest item first!
-  buckets[0].push(newestItem);
+  // Regular items: order_index === 0
+  const regularItems = items
+    .filter((i) => (i.order_index ?? 0) === 0)
+    .sort((a, b) => {
+      if (a.created_at && b.created_at) {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+      return 0;
+    });
+
+  let unslottedPool = regularItems;
+
+  // KASUS: TIDAK ADA KARYA BERSLOT (COMMIT ffde2026)
+  // Col 0 gets newestItem at top (under description)!
+  if (slottedItems.length === 0 && unslottedPool.length > 0) {
+    const newestItem = unslottedPool[0];
+    unslottedPool = unslottedPool.slice(1);
+    columns[0].push(newestItem);
+    slottedByCol[0].push(newestItem);
+    colHeights[0] += getItemRenderHeight(newestItem, aspectRatios);
+  }
 
   // Separate remaining items into videos and photos grouped by subcategory
   const remainingVideos: MediaItem[] = [];
   const photosBySubcat: Record<string, MediaItem[]> = {};
 
-  for (const item of remaining) {
+  for (const item of unslottedPool) {
     if (item.type === 'video') {
       remainingVideos.push(item);
     } else {
@@ -99,67 +157,136 @@ function distributeDefaultBalanced(items: MediaItem[]): MediaItem[] {
     }
   }
 
-  // 1. Distribute videos across columns round-robin
-  let videoBucketIdx = newestItem.type === 'video' ? 1 : 0;
+  // 1. Distribute videos across columns round-robin & spread evenly
+  const totalVideos = items.filter((i) => i.type === 'video').length;
+  const maxVideosPerCol = Math.ceil(totalVideos / numCols);
+
   for (const video of remainingVideos) {
-    let bestBucket = -1;
-    let minItems = Infinity;
-    for (let i = 0; i < numCols; i++) {
-      const bIdx = (videoBucketIdx + i) % numCols;
-      if (buckets[bIdx].length < chunkSizes[bIdx] && buckets[bIdx].length < minItems) {
-        minItems = buckets[bIdx].length;
-        bestBucket = bIdx;
+    let bestCol = -1;
+    let minH = Infinity;
+
+    for (let c = 0; c < numCols; c++) {
+      const vCount = columns[c].filter((x) => x.type === 'video').length;
+      if (vCount < maxVideosPerCol) {
+        if (colHeights[c] < minH) {
+          minH = colHeights[c];
+          bestCol = c;
+        }
       }
     }
-    if (bestBucket === -1) {
-      bestBucket = buckets.reduce((min, b, idx) => (b.length < buckets[min].length ? idx : min), 0);
+
+    if (bestCol === -1) {
+      bestCol = colHeights.indexOf(Math.min(...colHeights));
     }
-    buckets[bestBucket].push(video);
-    videoBucketIdx = (bestBucket + 1) % numCols;
+
+    columns[bestCol].push(video);
+    colHeights[bestCol] += getItemRenderHeight(video, aspectRatios);
   }
 
-  // 2. Distribute photos round-robin across subcategories in chronological order
+  // 2. Distribute photos greedily to column with lowest accumulated height (balancing empty space)
   const subcatKeys = Object.keys(photosBySubcat);
   while (subcatKeys.some((k) => photosBySubcat[k].length > 0)) {
     for (const key of subcatKeys) {
       if (photosBySubcat[key].length > 0) {
         const photo = photosBySubcat[key].shift()!;
 
-        let bestBucket = -1;
-        let minSameSub = Infinity;
-        let minLength = Infinity;
+        let bestCol = -1;
+        let minH = Infinity;
 
-        for (let b = 0; b < numCols; b++) {
-          if (buckets[b].length < chunkSizes[b]) {
-            const sameCount = buckets[b].filter((x) => x.subcategory === key).length;
-            if (sameCount < minSameSub || (sameCount === minSameSub && buckets[b].length < minLength)) {
-              minSameSub = sameCount;
-              minLength = buckets[b].length;
-              bestBucket = b;
-            }
+        for (let c = 0; c < numCols; c++) {
+          if (colHeights[c] < minH) {
+            minH = colHeights[c];
+            bestCol = c;
           }
         }
 
-        if (bestBucket === -1) {
-          bestBucket = buckets.reduce((min, b, idx) => (b.length < buckets[min].length ? idx : min), 0);
-        }
-
-        buckets[bestBucket].push(photo);
+        columns[bestCol].push(photo);
+        colHeights[bestCol] += getItemRenderHeight(photo, aspectRatios);
       }
     }
   }
 
-  // 3. Inside each bucket, interleave photos and videos stably
-  for (let b = 0; b < numCols; b++) {
-    const isFirstBucket = b === 0;
-    const bucketItems = isFirstBucket ? buckets[b].slice(1) : buckets[b];
+  // 3. Two-Tier Optimization Phase: Transfer & Pairwise Swap
+  // Guarantees all 3 columns align at the bottom regardless of future item additions, deletions, or ratio variations!
+  let improved = true;
+  for (let iter = 0; iter < 30 && improved; iter++) {
+    improved = false;
+    let currentRange = Math.max(...colHeights) - Math.min(...colHeights);
+    if (currentRange <= 60) break;
+
+    const tallestCol = colHeights.indexOf(Math.max(...colHeights));
+    const shortestCol = colHeights.indexOf(Math.min(...colHeights));
+
+    // A. Transfer: Move an unslotted photo from tallest column to shortest column if it strictly reduces range
+    const unslottedTallest = columns[tallestCol].slice(slottedByCol[tallestCol].length).filter((i) => i.type === 'photo');
+    for (const photo of unslottedTallest) {
+      const h = getItemRenderHeight(photo, aspectRatios);
+      const testHeights = [...colHeights];
+      testHeights[tallestCol] -= h;
+      testHeights[shortestCol] += h;
+
+      const testRange = Math.max(...testHeights) - Math.min(...testHeights);
+      if (testRange < currentRange - 30) {
+        const pIdx = columns[tallestCol].lastIndexOf(photo);
+        columns[tallestCol].splice(pIdx, 1);
+        columns[shortestCol].push(photo);
+        colHeights[tallestCol] -= h;
+        colHeights[shortestCol] += h;
+        currentRange = testRange;
+        improved = true;
+        break;
+      }
+    }
+
+    if (improved) continue;
+
+    // B. Pairwise Swap: Swap a taller photo in colA with a shorter photo in colB to fine-tune alignment
+    for (let cA = 0; cA < numCols; cA++) {
+      for (let cB = cA + 1; cB < numCols; cB++) {
+        const unslottedA = columns[cA].slice(slottedByCol[cA].length).filter((i) => i.type === 'photo');
+        const unslottedB = columns[cB].slice(slottedByCol[cB].length).filter((i) => i.type === 'photo');
+
+        for (const itemA of unslottedA) {
+          for (const itemB of unslottedB) {
+            const hA = getItemRenderHeight(itemA, aspectRatios);
+            const hB = getItemRenderHeight(itemB, aspectRatios);
+
+            const testHeights = [...colHeights];
+            testHeights[cA] = testHeights[cA] - hA + hB;
+            testHeights[cB] = testHeights[cB] - hB + hA;
+
+            const testRange = Math.max(...testHeights) - Math.min(...testHeights);
+            if (testRange < currentRange - 20) {
+              const idxA = columns[cA].lastIndexOf(itemA);
+              const idxB = columns[cB].lastIndexOf(itemB);
+              columns[cA][idxA] = itemB;
+              columns[cB][idxB] = itemA;
+              colHeights[cA] = testHeights[cA];
+              colHeights[cB] = testHeights[cB];
+              currentRange = testRange;
+              improved = true;
+              break;
+            }
+          }
+          if (improved) break;
+        }
+        if (improved) break;
+      }
+      if (improved) break;
+    }
+  }
+
+  // 4. Inside each column, keep slotted items at head, then interleave unslotted photos and videos stably
+  for (let c = 0; c < numCols; c++) {
+    const lockedHead = slottedByCol[c];
+    const unslottedInCol = columns[c].slice(lockedHead.length);
 
     const itemsBySub: Record<string, MediaItem[]> = {};
-    const bucketVideos: MediaItem[] = [];
+    const colVideos: MediaItem[] = [];
 
-    for (const it of bucketItems) {
+    for (const it of unslottedInCol) {
       if (it.type === 'video') {
-        bucketVideos.push(it);
+        colVideos.push(it);
       } else {
         const s = it.subcategory || 'default';
         if (!itemsBySub[s]) itemsBySub[s] = [];
@@ -182,114 +309,31 @@ function distributeDefaultBalanced(items: MediaItem[]): MediaItem[] {
     let pIdx = 0;
     let vIdx = 0;
     const step =
-      bucketVideos.length > 0
-        ? Math.max(2, Math.floor(interleavedPhotos.length / bucketVideos.length))
+      colVideos.length > 0
+        ? Math.max(2, Math.floor(interleavedPhotos.length / colVideos.length))
         : 3;
 
-    while (pIdx < interleavedPhotos.length || vIdx < bucketVideos.length) {
+    while (pIdx < interleavedPhotos.length || vIdx < colVideos.length) {
       for (let s = 0; s < step && pIdx < interleavedPhotos.length; s++) {
         finalList.push(interleavedPhotos[pIdx++]);
       }
-      if (vIdx < bucketVideos.length) {
-        finalList.push(bucketVideos[vIdx++]);
+      if (vIdx < colVideos.length) {
+        finalList.push(colVideos[vIdx++]);
       }
     }
 
-    buckets[b] = isFirstBucket ? [newestItem, ...finalList] : finalList;
+    columns[c] = [...lockedHead, ...finalList];
   }
 
-  return buckets.flat();
-}
-
-interface GalleryDistributionResult {
-  items: MediaItem[];
-  columnBreakItemIds: Set<string>;
-}
-
-/**
- * Distributes gallery items across 3 columns:
- * - If custom showcase slots exist (order_index > 0):
- *   Slot 1 -> Col 2 top (break-before-column)
- *   Slot 2 -> Col 3 top (break-before-column)
- *   Slot 3 -> Col 1 under Editorial Card
- *   Slot 4 -> Col 2 under Slot 1
- *   Slot 5 -> Col 3 under Slot 2
- *   Remaining slots expand round-robin 3 columns
- *   Empty priority slots are filled FIFO with newest regular items.
- * - If no custom slots exist:
- *   Uses default balanced distribution with stable video/photo interleaving.
- */
-function distributeGalleryItemsBalanced(items: MediaItem[]): GalleryDistributionResult {
-  if (!items || items.length === 0) {
-    return { items: [], columnBreakItemIds: new Set() };
-  }
-
-  // Check if any items have custom order_index > 0
-  const customItems = items.filter((item) => (item.order_index ?? 0) > 0);
-
-  // KASUS 1: Default balanced (semua order_index === 0 atau kategori 'all')
-  if (customItems.length === 0) {
-    const balancedFlat = distributeDefaultBalanced(items);
-    return {
-      items: balancedFlat,
-      columnBreakItemIds: new Set(),
-    };
-  }
-
-  // KASUS 2: Custom showcase slot matrix (order_index > 0)
-  const slotMap = new Map<number, MediaItem>();
-  for (const item of customItems) {
-    slotMap.set(item.order_index!, item);
-  }
-
-  const maxSlotAssigned = Math.max(...customItems.map((i) => i.order_index!));
-
-  // Regular items (order_index === 0) in chronological / FIFO order
-  const regularItems = items.filter((item) => (item.order_index ?? 0) === 0);
-  const regularQueue = [...regularItems];
-
-  // Matriks slot terurut: slot 1, 2, 3, 4, ...
-  const slotArray: (MediaItem | null)[] = [];
-  let currentSlot = 1;
-
-  while (currentSlot <= maxSlotAssigned || regularQueue.length > 0) {
-    if (slotMap.has(currentSlot)) {
-      slotArray[currentSlot] = slotMap.get(currentSlot)!;
-    } else if (regularQueue.length > 0) {
-      slotArray[currentSlot] = regularQueue.shift()!;
-    } else {
-      slotArray[currentSlot] = null;
-    }
-    currentSlot++;
-  }
-
-  // Pemetaan slot deterministik ke 3 kolom (Karya 1 mulai dari Kiri Atas):
-  // Kolom 1 (Bucket 0): Slot 1, Slot 4, Slot 7, Slot 10... (Kiri)
-  // Kolom 2 (Bucket 1): Slot 2, Slot 5, Slot 8, Slot 11... (Tengah)
-  // Kolom 3 (Bucket 2): Slot 3, Slot 6, Slot 9, Slot 12... (Kanan)
-  const buckets: [MediaItem[], MediaItem[], MediaItem[]] = [[], [], []];
-
-  for (let s = 1; s < slotArray.length; s++) {
-    const item = slotArray[s];
-    if (!item) continue;
-
-    const colIndex = (s - 1) % 3;
-    buckets[colIndex].push(item);
-  }
-
-  const columnBreakItemIds = new Set<string>();
-  if (buckets[1].length > 0) {
-    columnBreakItemIds.add(buckets[1][0].id);
-  }
-  if (buckets[2].length > 0) {
-    columnBreakItemIds.add(buckets[2][0].id);
-  }
-
-  const flatItems = [...buckets[0], ...buckets[1], ...buckets[2]];
+  // flatItems: all slotted items first in slot order, then unslotted items
+  const mobileFlat: MediaItem[] = [
+    ...slottedItems,
+    ...regularItems.filter((it) => !slottedItems.some((s) => s.id === it.id)),
+  ];
 
   return {
-    items: flatItems,
-    columnBreakItemIds,
+    columns,
+    flatItems: mobileFlat,
   };
 }
 
@@ -402,6 +446,7 @@ export default function ModernGallery({
             video_url,
             status,
             order_index,
+            slides,
             created_at,
             subcategories:subcategory_id (
               id,
@@ -416,7 +461,6 @@ export default function ModernGallery({
             )
           `)
           .eq('status', 'published')
-          .order('order_index', { ascending: true })
           .order('created_at', { ascending: false });
 
         // Filter active (non-archived) categories & subcategories
@@ -499,6 +543,8 @@ export default function ModernGallery({
               videoUrl: d.video_url || undefined,
               aspect: undefined,
               order_index: d.order_index ?? 0,
+              created_at: d.created_at,
+              slides: Array.isArray(d.slides) ? d.slides : undefined,
             }));
           setItems(mappedItems);
         }
@@ -583,20 +629,31 @@ export default function ModernGallery({
   // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
   const ENABLE_LOAD_MORE = false;
 
-  // Organize items for CSS Multi-Column layout
-  const { displayedItems, columnBreakItemIds } = useMemo(() => {
+  // Distributed columns & flat items for responsive display
+  const { columns: desktopColumns, flatItems } = useMemo(() => {
     const baseItems = !ENABLE_LOAD_MORE ? filteredItems : filteredItems.slice(0, visibleCount);
-    const result = distributeGalleryItemsBalanced(baseItems);
-    return {
-      displayedItems: result.items,
-      columnBreakItemIds: result.columnBreakItemIds,
-    };
+    const hasDesc = Boolean(activeCategory !== 'all' && activeCategoryObj);
+    return distributeGalleryColumns(baseItems, aspectRatios, hasDesc);
+  }, [filteredItems, visibleCount, ENABLE_LOAD_MORE, aspectRatios, activeCategory, activeCategoryObj]);
+
+  // Items to preload before revealing gallery layout
+  const itemsToPreload = useMemo(() => {
+    return !ENABLE_LOAD_MORE ? filteredItems : filteredItems.slice(0, visibleCount);
   }, [filteredItems, visibleCount, ENABLE_LOAD_MORE]);
+
+  // Combined displayed items for progress indicators
+  const displayedItems = useMemo(() => {
+    return [
+      ...desktopColumns[0],
+      ...desktopColumns[1],
+      ...desktopColumns[2],
+    ];
+  }, [desktopColumns]);
 
   // PRELOAD & DECODE ALL IMAGES IN MEMORY BEFORE DISPLAYING TO USER
   // Menjamin semua gambar sudah tersusun dan ter-decode 100% di memori browser sebelum ditampilkan
   useEffect(() => {
-    if (displayedItems.length === 0) {
+    if (itemsToPreload.length === 0) {
       setIsArrangingLayout(false);
       return;
     }
@@ -608,7 +665,7 @@ export default function ModernGallery({
       const detectedAspects: Record<string, number> = {};
       const startTime = Date.now();
 
-      const promises = displayedItems.map((item) => {
+      const promises = itemsToPreload.map((item) => {
         return new Promise<void>((resolve) => {
           const isVideo = item.type === 'video' && Boolean(item.videoUrl);
           const isYouTube = isVideo && item.videoUrl ? Boolean(getYouTubeVideoId(item.videoUrl)) : false;
@@ -645,7 +702,7 @@ export default function ModernGallery({
 
       if (isCancelled) return;
 
-      // Update aspect ratios map so GalleryCard can pre-allocate exact dimensions
+      // Update aspect ratios map so GalleryCard and distributeGalleryColumns compute exact dimensions
       setAspectRatios((prev) => ({ ...prev, ...detectedAspects }));
 
       // Ensure minimal duration of 300ms for smooth skeleton transition so layout settles
@@ -679,7 +736,7 @@ export default function ModernGallery({
       isCancelled = true;
       clearTimeout(safetyTimer);
     };
-  }, [activeCategory, activeSubcategory, displayedItems]);
+  }, [activeCategory, activeSubcategory, itemsToPreload]);
 
   const hasMore = visibleCount < filteredItems.length;
   const remainingCount = Math.max(0, filteredItems.length - visibleCount);
@@ -745,32 +802,14 @@ export default function ModernGallery({
     <section id="work" className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-28 md:pb-36">
       {/* Category Navigation Bar */}
       <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-black/10 animate-entrance-nav">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div className="flex flex-col gap-2 max-w-xl">
-            <div className="flex items-center gap-2.5">
-              <span className="w-2 h-2 rounded-full bg-neutral-900 shrink-0 mt-0.5" />
-              <h1 className="font-heading font-black text-xl sm:text-2xl md:text-3xl uppercase tracking-tight text-neutral-900 leading-none">
-                {activeSubcategory !== 'all'
-                  ? `${activeCategoryObj?.label || 'PORTFOLIO'} - ${activeTitle}`
-                  : `ALL ${activeCategoryObj?.label || 'PORTFOLIO'}`}
-              </h1>
-            </div>
-
-            {/* Combined Category & Subcategory Descriptions */}
-            {(categoryDescription || subcategoryDescription) && (
-              <div className="flex flex-col gap-1 text-left mt-1">
-                {categoryDescription && (
-                  <p className="text-xs sm:text-sm text-neutral-500 font-sans leading-relaxed">
-                    {categoryDescription}
-                  </p>
-                )}
-                {subcategoryDescription && subcategoryDescription !== categoryDescription && (
-                  <p className="text-xs sm:text-sm text-neutral-800 font-sans leading-relaxed font-medium">
-                    {subcategoryDescription}
-                  </p>
-                )}
-              </div>
-            )}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-neutral-500 block mb-1">
+              PORTFOLIO SHOWCASE
+            </span>
+            <h2 className="font-heading font-bold text-3xl sm:text-4xl uppercase tracking-tight text-neutral-900">
+              SELECTED WORKS
+            </h2>
           </div>
 
           {/* Primary Category Tabs */}
@@ -815,8 +854,8 @@ export default function ModernGallery({
                     key={cat.id}
                     onClick={() => handleSelectCategory(cat.id)}
                     className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider px-4 py-2.5 rounded-full transition-all duration-300 ${isActive
-                        ? 'bg-neutral-900 text-[#edeced] shadow-md scale-105'
-                        : 'bg-white/80 hover:bg-white text-neutral-700 hover:text-black border border-black/5 hover:border-black/15'
+                      ? 'bg-neutral-900 text-[#edeced] shadow-md scale-105'
+                      : 'bg-white/80 hover:bg-white text-neutral-700 hover:text-black border border-black/5 hover:border-black/15'
                       }`}
                   >
                     <span>{cat.label}</span>
@@ -868,15 +907,15 @@ export default function ModernGallery({
                   key={sub.id}
                   onClick={() => handleSelectSubcategory(sub.id)}
                   className={`flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider px-3.5 py-1.5 rounded-full transition-all duration-200 ${isSubActive
-                      ? 'bg-black text-white font-semibold shadow-sm'
-                      : 'bg-neutral-200/70 hover:bg-neutral-300/80 text-neutral-700'
+                    ? 'bg-black text-white font-semibold shadow-sm'
+                    : 'bg-neutral-200/70 hover:bg-neutral-300/80 text-neutral-700'
                     }`}
                 >
                   <span>{sub.label}</span>
                   <span
                     className={`text-[9px] font-mono px-1 py-0.2 rounded-full ${isSubActive
-                        ? 'bg-white/20 text-white'
-                        : 'bg-black/10 text-neutral-600'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-black/10 text-neutral-600'
                       }`}
                   >
                     {subCount}
@@ -953,11 +992,10 @@ export default function ModernGallery({
         {/* GALLERY GRID (Always in DOM in background to balance columns stably) */}
         <div
           ref={galleryContainerRef}
-          className={`transition-opacity duration-500 ease-out ${
-            isLoading || isArrangingLayout
+          className={`transition-opacity duration-500 ease-out ${isLoading || isArrangingLayout
               ? 'opacity-0 pointer-events-none select-none'
               : 'opacity-100 pointer-events-auto'
-          }`}
+            }`}
         >
           {filteredItems.length === 0 ? (
             <div className="py-16 text-center">
@@ -989,27 +1027,141 @@ export default function ModernGallery({
             </div>
           ) : (
             <>
-              <div
-                key={`${activeCategory}-${activeSubcategory}`}
-                className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7"
-              >
-                {displayedItems.map((item, idx) => {
-                  const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+              <div key={`${activeCategory}-${activeSubcategory}`}>
+                {/* DESKTOP VIEWPORT (lg: 3 Columns Deterministic Grid) */}
+                <div className="hidden lg:grid lg:grid-cols-3 gap-6 md:gap-7 items-start">
+                  {/* Column 1 (Left): Editorial Description sitting at top, then Slot 3, 6... & unslotted */}
+                  <div className="flex flex-col">
+                    {activeCategory !== 'all' && activeCategoryObj && (
+                      <div
+                        className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                        style={{
+                          animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                          <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                            {activeSubcategory !== 'all'
+                              ? `${activeCategoryObj.label} - ${activeTitle}`
+                              : `ALL ${activeCategoryObj.label}`}
+                          </span>
+                        </div>
 
-                  return (
-                    <GalleryCard
-                      key={item.id}
-                      item={item}
-                      idx={idx}
-                      fullIndex={fullIndex}
-                      hasMounted={hasMounted}
-                      isInitialEntrance={isInitialEntrance}
-                      onOpenLightbox={openLightbox}
-                      aspectRatio={aspectRatios[item.id]}
-                      isColumnBreak={columnBreakItemIds.has(item.id)}
-                    />
-                  );
-                })}
+                        <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+                          {activeTitle}
+                        </h3>
+
+                        {activeDescription && (
+                          <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
+                            {activeDescription}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {desktopColumns[0].map((item, idx) => {
+                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      return (
+                        <GalleryCard
+                          key={item.id}
+                          item={item}
+                          idx={idx * 3}
+                          fullIndex={fullIndex}
+                          hasMounted={hasMounted}
+                          isInitialEntrance={isInitialEntrance}
+                          onOpenLightbox={openLightbox}
+                          aspectRatio={aspectRatios[item.id]}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* Column 2 (Center): Slot 1, 4, 7... at head, then unslotted */}
+                  <div className="flex flex-col">
+                    {desktopColumns[1].map((item, idx) => {
+                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      return (
+                        <GalleryCard
+                          key={item.id}
+                          item={item}
+                          idx={idx * 3 + 1}
+                          fullIndex={fullIndex}
+                          hasMounted={hasMounted}
+                          isInitialEntrance={isInitialEntrance}
+                          onOpenLightbox={openLightbox}
+                          aspectRatio={aspectRatios[item.id]}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* Column 3 (Right): Slot 2, 5, 8... at head, then unslotted */}
+                  <div className="flex flex-col">
+                    {desktopColumns[2].map((item, idx) => {
+                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      return (
+                        <GalleryCard
+                          key={item.id}
+                          item={item}
+                          idx={idx * 3 + 2}
+                          fullIndex={fullIndex}
+                          hasMounted={hasMounted}
+                          isInitialEntrance={isInitialEntrance}
+                          onOpenLightbox={openLightbox}
+                          aspectRatio={aspectRatios[item.id]}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* MOBILE & TABLET VIEWPORT (columns-1 sm:columns-2) */}
+                <div className="lg:hidden columns-1 sm:columns-2 gap-6 md:gap-7">
+                  {activeCategory !== 'all' && activeCategoryObj && (
+                    <div
+                      className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
+                      style={{
+                        animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
+                        <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
+                          {activeSubcategory !== 'all'
+                            ? `${activeCategoryObj.label} - ${activeTitle}`
+                            : `ALL ${activeCategoryObj.label}`}
+                        </span>
+                      </div>
+
+                      <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
+                        {activeTitle}
+                      </h3>
+
+                      {activeDescription && (
+                        <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
+                          {activeDescription}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {flatItems.map((item, idx) => {
+                    const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                    return (
+                      <GalleryCard
+                        key={`mob-${item.id}`}
+                        item={item}
+                        idx={idx}
+                        fullIndex={fullIndex}
+                        hasMounted={hasMounted}
+                        isInitialEntrance={isInitialEntrance}
+                        onOpenLightbox={openLightbox}
+                        aspectRatio={aspectRatios[item.id]}
+                      />
+                    );
+                  })}
+                </div>
               </div>
 
               {/* 

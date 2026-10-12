@@ -18,6 +18,14 @@ export interface CategoryGroup {
 // Default categories are empty: all category hierarchies are driven by the database.
 export const CATEGORIES: CategoryGroup[] = [];
 
+export interface MediaSlide {
+  id: string;
+  type: 'photo' | 'video';
+  image: string;
+  videoUrl?: string;
+  caption?: string;
+}
+
 export interface MediaItem {
   id: string;
   category: MainCategory;
@@ -31,6 +39,42 @@ export interface MediaItem {
   videoUrl?: string; // YouTube embed link for playable modal
   status?: 'draft' | 'published' | 'archived';
   order_index?: number;
+  created_at?: string;
+  slides?: MediaSlide[];
+}
+
+/**
+ * Normalizes all slides for a media item so that the primary cover media
+ * (photo or video) is always guaranteed to be present as the first slide,
+ * followed by any additional slides.
+ */
+export function getNormalizedSlides(item?: MediaItem | null): MediaSlide[] {
+  if (!item) return [];
+
+  const coverSlide: MediaSlide = {
+    id: `${item.id}-cover`,
+    type: item.type,
+    image: item.image,
+    videoUrl: item.type === 'video' ? item.videoUrl : undefined,
+    caption: item.description || '',
+  };
+
+  if (!item.slides || item.slides.length === 0) {
+    return [coverSlide];
+  }
+
+  // Check if primary media is already included in slides
+  const isCoverInSlides = item.slides.some(
+    (s) =>
+      (item.type === 'video' && s.type === 'video' && Boolean(s.videoUrl && item.videoUrl && s.videoUrl === item.videoUrl)) ||
+      (item.type === 'photo' && s.type === 'photo' && Boolean(s.image && item.image && s.image === item.image))
+  );
+
+  if (isCoverInSlides) {
+    return item.slides;
+  }
+
+  return [coverSlide, ...item.slides];
 }
 
 /**

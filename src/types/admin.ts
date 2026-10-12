@@ -1,4 +1,4 @@
-import { MainCategory, MediaItem } from '@/data/portfolioData';
+import { MainCategory, MediaItem, MediaSlide } from '@/data/portfolioData';
 
 export type TabType = 'overview' | 'contents' | 'categories' | 'layout';
 
@@ -27,6 +27,7 @@ export interface ContentFormData {
   image: string;
   videoUrl: string;
   status: 'draft' | 'published' | 'archived';
+  slides?: MediaSlide[];
 }
 
 export interface BulkEditFormData {

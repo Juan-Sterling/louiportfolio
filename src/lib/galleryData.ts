@@ -52,6 +52,7 @@ export async function getGalleryData(): Promise<{
         video_url,
         status,
         order_index,
+        slides,
         created_at,
         subcategories:subcategory_id (
           id,
@@ -143,6 +144,8 @@ export async function getGalleryData(): Promise<{
           videoUrl: d.video_url || undefined,
           aspect: d.aspect || undefined,
           order_index: d.order_index ?? 0,
+          created_at: d.created_at,
+          slides: Array.isArray(d.slides) ? d.slides : undefined,
         }));
     }
 
