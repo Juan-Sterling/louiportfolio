@@ -24,10 +24,12 @@ export interface GalleryCategory {
   id: string;
   label: string;
   description: string;
+  status?: 'published' | 'archived' | 'draft';
   subcategories: Array<{
     id: string;
     label: string;
     description: string;
+    status?: 'published' | 'archived' | 'draft';
   }>;
 }
 
@@ -44,7 +46,27 @@ export interface GalleryCategory {
  * 5. 100% deterministic & shuffle-free: items NEVER scramble or jump randomly between columns
  *    when navigating categories or subcategories!
  */
-function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
+/**
+ * Custom Showcase Spatial Slot Mapper:
+ * Returns the CSS 3-column masonry bucket index (0 = Left, 1 = Center, 2 = Right)
+ * for a given deterministic slot number.
+ *
+ * Blueprint Layout Matrix (PRD Section 4 & 5):
+ * Row 1: Col 1 = Editorial Text (DOM child 0), Col 2 = Slot #1 (Bucket 1), Col 3 = Slot #2 (Bucket 2)
+ * Row 2: Col 1 = Slot #3 (Bucket 0), Col 2 = Slot #4 (Bucket 1), Col 3 = Slot #5 (Bucket 2)
+ * Row 3: Col 1 = Slot #6 (Bucket 0), Col 2 = Slot #7 (Bucket 1), Col 3 = Slot #8 (Bucket 2)
+ * Row N: Col 1 = Slot 3 + (N-2)*3, Col 2 = Slot 4 + (N-2)*3, Col 3 = Slot 5 + (N-2)*3
+ */
+function getBucketIndexForSlot(slotNum: number): number {
+  if (slotNum === 1) return 1; // Col 2, Row 1
+  if (slotNum === 2) return 2; // Col 3, Row 1
+  return (slotNum - 3) % 3;    // Slot 3->0 (Col 1), Slot 4->1 (Col 2), Slot 5->2 (Col 3), etc.
+}
+
+/**
+ * Default balanced distribution for items when no custom slots are configured.
+ */
+function distributeDefaultBalanced(items: MediaItem[]): MediaItem[] {
   if (!items || items.length <= 1) return items;
 
   const total = items.length;
@@ -179,6 +201,98 @@ function distributeGalleryItemsBalanced(items: MediaItem[]): MediaItem[] {
   return buckets.flat();
 }
 
+interface GalleryDistributionResult {
+  items: MediaItem[];
+  columnBreakItemIds: Set<string>;
+}
+
+/**
+ * Distributes gallery items across 3 columns:
+ * - If custom showcase slots exist (order_index > 0):
+ *   Slot 1 -> Col 2 top (break-before-column)
+ *   Slot 2 -> Col 3 top (break-before-column)
+ *   Slot 3 -> Col 1 under Editorial Card
+ *   Slot 4 -> Col 2 under Slot 1
+ *   Slot 5 -> Col 3 under Slot 2
+ *   Remaining slots expand round-robin 3 columns
+ *   Empty priority slots are filled FIFO with newest regular items.
+ * - If no custom slots exist:
+ *   Uses default balanced distribution with stable video/photo interleaving.
+ */
+function distributeGalleryItemsBalanced(items: MediaItem[]): GalleryDistributionResult {
+  if (!items || items.length === 0) {
+    return { items: [], columnBreakItemIds: new Set() };
+  }
+
+  // Check if any items have custom order_index > 0
+  const customItems = items.filter((item) => (item.order_index ?? 0) > 0);
+
+  // KASUS 1: Default balanced (semua order_index === 0 atau kategori 'all')
+  if (customItems.length === 0) {
+    const balancedFlat = distributeDefaultBalanced(items);
+    return {
+      items: balancedFlat,
+      columnBreakItemIds: new Set(),
+    };
+  }
+
+  // KASUS 2: Custom showcase slot matrix (order_index > 0)
+  const slotMap = new Map<number, MediaItem>();
+  for (const item of customItems) {
+    slotMap.set(item.order_index!, item);
+  }
+
+  const maxSlotAssigned = Math.max(...customItems.map((i) => i.order_index!));
+
+  // Regular items (order_index === 0) in chronological / FIFO order
+  const regularItems = items.filter((item) => (item.order_index ?? 0) === 0);
+  const regularQueue = [...regularItems];
+
+  // Matriks slot terurut: slot 1, 2, 3, 4, ...
+  const slotArray: (MediaItem | null)[] = [];
+  let currentSlot = 1;
+
+  while (currentSlot <= maxSlotAssigned || regularQueue.length > 0) {
+    if (slotMap.has(currentSlot)) {
+      slotArray[currentSlot] = slotMap.get(currentSlot)!;
+    } else if (regularQueue.length > 0) {
+      slotArray[currentSlot] = regularQueue.shift()!;
+    } else {
+      slotArray[currentSlot] = null;
+    }
+    currentSlot++;
+  }
+
+  // Pemetaan slot deterministik ke 3 kolom (Karya 1 mulai dari Kiri Atas):
+  // Kolom 1 (Bucket 0): Slot 1, Slot 4, Slot 7, Slot 10... (Kiri)
+  // Kolom 2 (Bucket 1): Slot 2, Slot 5, Slot 8, Slot 11... (Tengah)
+  // Kolom 3 (Bucket 2): Slot 3, Slot 6, Slot 9, Slot 12... (Kanan)
+  const buckets: [MediaItem[], MediaItem[], MediaItem[]] = [[], [], []];
+
+  for (let s = 1; s < slotArray.length; s++) {
+    const item = slotArray[s];
+    if (!item) continue;
+
+    const colIndex = (s - 1) % 3;
+    buckets[colIndex].push(item);
+  }
+
+  const columnBreakItemIds = new Set<string>();
+  if (buckets[1].length > 0) {
+    columnBreakItemIds.add(buckets[1][0].id);
+  }
+  if (buckets[2].length > 0) {
+    columnBreakItemIds.add(buckets[2][0].id);
+  }
+
+  const flatItems = [...buckets[0], ...buckets[1], ...buckets[2]];
+
+  return {
+    items: flatItems,
+    columnBreakItemIds,
+  };
+}
+
 interface ModernGalleryProps {
   initialCategories?: GalleryCategory[];
   initialItems?: MediaItem[];
@@ -287,32 +401,46 @@ export default function ModernGallery({
             type,
             video_url,
             status,
+            order_index,
             created_at,
             subcategories:subcategory_id (
               id,
               label,
               category_id,
+              status,
               categories:category_id (
                 id,
-                label
+                label,
+                status
               )
             )
           `)
           .eq('status', 'published')
+          .order('order_index', { ascending: true })
           .order('created_at', { ascending: false });
 
+        // Filter active (non-archived) categories & subcategories
+        const activeCats = (catData || []).filter((c) => c.status !== 'archived');
+        const activeCatIds = new Set(activeCats.map((c) => c.id));
+        const activeSubs = (subData || []).filter(
+          (s) => s.status !== 'archived' && activeCatIds.has(s.category_id)
+        );
+        const activeSubIds = new Set(activeSubs.map((s) => s.id));
+
         // Map categories & subcategories
-        if (catData) {
-          const structuredCats: GalleryCategory[] = catData.map((c) => ({
+        if (activeCats.length > 0) {
+          const structuredCats: GalleryCategory[] = activeCats.map((c) => ({
             id: c.id,
             label: c.label,
             description: c.description || '',
-            subcategories: (subData || [])
+            status: (c.status || 'published') as 'published' | 'archived' | 'draft',
+            subcategories: activeSubs
               .filter((s) => s.category_id === c.id)
               .map((s) => ({
                 id: s.id,
                 label: s.label,
                 description: s.description || '',
+                status: (s.status || 'published') as 'published' | 'archived' | 'draft',
               })),
           }));
           setCategories(structuredCats);
@@ -341,18 +469,37 @@ export default function ModernGallery({
         // Map contents into MediaItem format
         if (contentData) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const mappedItems: MediaItem[] = contentData.map((d: any) => ({
-            id: d.id,
-            category: (d.subcategories?.categories?.id || 'photography') as any,
-            categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
-            subcategory: d.subcategories?.id || d.subcategory_id,
-            subcategoryLabel: d.subcategories?.label || 'Portfolio',
-            description: d.description || '',
-            type: (d.type || 'photo') as 'photo' | 'video',
-            image: d.image_url,
-            videoUrl: d.video_url || undefined,
-            aspect: undefined,
-          }));
+          const mappedItems: MediaItem[] = contentData
+            .filter((d: any) => {
+              if (d.status && d.status !== 'published') return false;
+
+              const sub = d.subcategories;
+              const cat = sub?.categories;
+
+              // If subcategory or category is archived, hide this content
+              if (sub?.status === 'archived' || cat?.status === 'archived') return false;
+
+              const subId = sub?.id || d.subcategory_id;
+              const catId = cat?.id || sub?.category_id;
+
+              if (subId && !activeSubIds.has(subId)) return false;
+              if (catId && !activeCatIds.has(catId)) return false;
+
+              return true;
+            })
+            .map((d: any) => ({
+              id: d.id,
+              category: (d.subcategories?.categories?.id || 'photography') as any,
+              categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
+              subcategory: d.subcategories?.id || d.subcategory_id,
+              subcategoryLabel: d.subcategories?.label || 'Portfolio',
+              description: d.description || '',
+              type: (d.type || 'photo') as 'photo' | 'video',
+              image: d.image_url,
+              videoUrl: d.video_url || undefined,
+              aspect: undefined,
+              order_index: d.order_index ?? 0,
+            }));
           setItems(mappedItems);
         }
       } catch (err) {
@@ -436,10 +583,14 @@ export default function ModernGallery({
   // Cukup ubah nilai ENABLE_LOAD_MORE menjadi true untuk mengaktifkannya kembali di kemudian hari!
   const ENABLE_LOAD_MORE = false;
 
-  // Displayed items slice based on Load More count (atau tampil penuh jika nonaktif)
-  const displayedItems = useMemo(() => {
+  // Organize items for CSS Multi-Column layout
+  const { displayedItems, columnBreakItemIds } = useMemo(() => {
     const baseItems = !ENABLE_LOAD_MORE ? filteredItems : filteredItems.slice(0, visibleCount);
-    return distributeGalleryItemsBalanced(baseItems);
+    const result = distributeGalleryItemsBalanced(baseItems);
+    return {
+      displayedItems: result.items,
+      columnBreakItemIds: result.columnBreakItemIds,
+    };
   }, [filteredItems, visibleCount, ENABLE_LOAD_MORE]);
 
   // PRELOAD & DECODE ALL IMAGES IN MEMORY BEFORE DISPLAYING TO USER
@@ -559,20 +710,23 @@ export default function ModernGallery({
     return activeCategoryObj ? activeCategoryObj.label : 'SELECTED WORKS';
   }, [activeCategory, activeSubcategory, activeCategoryObj, currentSubcategories]);
 
-  // Active tagline/description
-  const activeDescription = useMemo(() => {
+  // Active Category Description
+  const categoryDescription = useMemo(() => {
     if (activeCategory === 'all') {
-      return 'A CURATED SELECTION ACROSS PHOTOGRAPHY, VIDEOGRAPHY, GRAPHIC DESIGN & APPAREL';
+      return 'A curated selection across photography, videography, graphic design & apparel.';
     }
-    if (!activeCategoryObj) return '';
+    return activeCategoryObj?.description?.trim() || '';
+  }, [activeCategory, activeCategoryObj]);
 
-    if (activeSubcategory !== 'all') {
-      const sub = currentSubcategories.find((s) => s.id === activeSubcategory);
-      return sub ? sub.description : '';
-    }
+  // Active Subcategory Description
+  const subcategoryDescription = useMemo(() => {
+    if (activeSubcategory === 'all') return '';
+    const sub = currentSubcategories.find((s) => s.id === activeSubcategory);
+    return sub?.description?.trim() || '';
+  }, [activeSubcategory, currentSubcategories]);
 
-    return activeCategoryObj.description;
-  }, [activeCategory, activeCategoryObj, activeSubcategory, currentSubcategories]);
+  // Combined active description for general fallbacks
+  const activeDescription = subcategoryDescription || categoryDescription;
 
   const openLightbox = useCallback((index: number) => {
     setActiveMediaIndex(index);
@@ -591,14 +745,32 @@ export default function ModernGallery({
     <section id="work" className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-12 pb-28 md:pb-36">
       {/* Category Navigation Bar */}
       <div className="flex flex-col gap-6 mb-10 pb-6 border-b border-black/10 animate-entrance-nav">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-neutral-500 block mb-1">
-              PORTFOLIO SHOWCASE
-            </span>
-            <h2 className="font-heading font-bold text-3xl sm:text-4xl uppercase tracking-tight text-neutral-900">
-              SELECTED WORKS
-            </h2>
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+          <div className="flex flex-col gap-2 max-w-xl">
+            <div className="flex items-center gap-2.5">
+              <span className="w-2 h-2 rounded-full bg-neutral-900 shrink-0 mt-0.5" />
+              <h1 className="font-heading font-black text-xl sm:text-2xl md:text-3xl uppercase tracking-tight text-neutral-900 leading-none">
+                {activeSubcategory !== 'all'
+                  ? `${activeCategoryObj?.label || 'PORTFOLIO'} - ${activeTitle}`
+                  : `ALL ${activeCategoryObj?.label || 'PORTFOLIO'}`}
+              </h1>
+            </div>
+
+            {/* Combined Category & Subcategory Descriptions */}
+            {(categoryDescription || subcategoryDescription) && (
+              <div className="flex flex-col gap-1 text-left mt-1">
+                {categoryDescription && (
+                  <p className="text-xs sm:text-sm text-neutral-500 font-sans leading-relaxed">
+                    {categoryDescription}
+                  </p>
+                )}
+                {subcategoryDescription && subcategoryDescription !== categoryDescription && (
+                  <p className="text-xs sm:text-sm text-neutral-800 font-sans leading-relaxed font-medium">
+                    {subcategoryDescription}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Primary Category Tabs */}
@@ -821,35 +993,6 @@ export default function ModernGallery({
                 key={`${activeCategory}-${activeSubcategory}`}
                 className="columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7"
               >
-                {/* Unboxed Editorial Statement sitting at the top of Column 1 */}
-                {activeCategory !== 'all' && activeCategoryObj && (
-                  <div
-                    className="break-inside-avoid mb-6 md:mb-7 py-3 md:py-4 px-1 select-none flex flex-col justify-center animate-entrance-card"
-                    style={{
-                      animationDelay: `${isInitialEntrance ? 650 : 40}ms`,
-                    }}
-                  >
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-900" />
-                      <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.25em] text-neutral-500">
-                        {activeSubcategory !== 'all'
-                          ? `${activeCategoryObj.label} - ${activeTitle}`
-                          : `ALL ${activeCategoryObj.label}`}
-                      </span>
-                    </div>
-
-                    <h3 className="font-heading font-black text-2xl sm:text-3xl md:text-4xl uppercase tracking-tight text-neutral-900 leading-[1.08] mb-3">
-                      {activeTitle}
-                    </h3>
-
-                    {activeDescription && (
-                      <p className="text-xs sm:text-sm font-sans uppercase tracking-[0.15em] text-neutral-600 leading-relaxed font-medium max-w-md">
-                        {activeDescription}
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 {displayedItems.map((item, idx) => {
                   const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
 
@@ -863,6 +1006,7 @@ export default function ModernGallery({
                       isInitialEntrance={isInitialEntrance}
                       onOpenLightbox={openLightbox}
                       aspectRatio={aspectRatios[item.id]}
+                      isColumnBreak={columnBreakItemIds.has(item.id)}
                     />
                   );
                 })}

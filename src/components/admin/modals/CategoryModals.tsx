@@ -151,6 +151,28 @@ export default function CategoryModals({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400 mb-1.5">
+                  Visibility Status
+                </label>
+                <select
+                  value={categoryFormData.status || 'published'}
+                  onChange={(e) =>
+                    setCategoryFormData((prev) => ({
+                      ...prev,
+                      status: e.target.value as 'published' | 'archived',
+                    }))
+                  }
+                  className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 cursor-pointer"
+                >
+                  <option value="published">Visible / Published (Tampil di Website)</option>
+                  <option value="archived">Hidden / Archived (Disembunyikan)</option>
+                </select>
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Jika disembunyikan (hide), kategori dan semua karya di dalamnya tidak akan tampil di halaman utama.
+                </p>
+              </div>
+
               <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -268,6 +290,28 @@ export default function CategoryModals({
                   placeholder="Brief description about this subcategory..."
                   className="w-full bg-[#1e1e26] border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-white/30 resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono uppercase tracking-wider text-neutral-400 mb-1.5">
+                  Visibility Status
+                </label>
+                <select
+                  value={subcategoryFormData.status || 'published'}
+                  onChange={(e) =>
+                    setSubcategoryFormData((prev) => ({
+                      ...prev,
+                      status: e.target.value as 'published' | 'archived',
+                    }))
+                  }
+                  className="w-full bg-[#1e1e26] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 cursor-pointer"
+                >
+                  <option value="published">Visible / Published (Tampil di Website)</option>
+                  <option value="archived">Hidden / Archived (Disembunyikan)</option>
+                </select>
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Jika disembunyikan (hide), subkategori dan semua karya di dalamnya tidak akan tampil di halaman utama.
+                </p>
               </div>
 
               <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-3">

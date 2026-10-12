@@ -530,7 +530,7 @@ export default function BulkInsertModal({
                 >
                   {sortedCategories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.label} {c.label.toLowerCase().includes('video') ? '(Video)' : ''}
+                      {c.label} {c.label.toLowerCase().includes('video') ? '(Video)' : ''} {c.status === 'archived' ? '(Hidden)' : ''}
                     </option>
                   ))}
                 </select>
@@ -549,7 +549,7 @@ export default function BulkInsertModal({
                 >
                   {availableSubcategories.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.label}
+                      {s.label} {s.status === 'archived' ? '(Hidden)' : ''}
                     </option>
                   ))}
                 </select>

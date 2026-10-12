@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   FolderOpen,
   Layers,
+  LayoutGrid,
   ExternalLink,
   User,
   KeyRound,
@@ -118,6 +119,19 @@ export default function AdminSidebar({
             <span className="ml-auto text-[11px] font-mono bg-white/10 px-2 py-0.5 rounded-full text-neutral-300">
               {categoriesList.length}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('layout')}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+              activeTab === 'layout'
+                ? 'bg-white/10 text-white font-semibold'
+                : 'text-neutral-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span>Gallery Layout</span>
           </button>
         </nav>
       </div>

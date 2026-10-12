@@ -43,6 +43,7 @@ import AdminHeader from '@/components/admin/AdminHeader';
 import OverviewTab from '@/components/admin/tabs/OverviewTab';
 import ContentsTab from '@/components/admin/tabs/ContentsTab';
 import CategoriesTab from '@/components/admin/tabs/CategoriesTab';
+import LayoutTab from '@/components/admin/tabs/LayoutTab';
 import ContentModal from '@/components/admin/modals/ContentModal';
 import CategoryModals from '@/components/admin/modals/CategoryModals';
 import BulkModals from '@/components/admin/modals/BulkModals';
@@ -59,6 +60,7 @@ export default function AdminPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [notification, setNotification] = useState<string | null>(null);
+  const [selectedLayoutSubcategoryId, setSelectedLayoutSubcategoryId] = useState<string>('');
 
   // Auth User
   const [currentUser, setCurrentUser] = useState<{ email?: string; id?: string } | null>(null);
@@ -124,6 +126,7 @@ export default function AdminPage() {
     id: '',
     label: '',
     description: '',
+    status: 'published',
   });
   const [deletingCategory, setDeletingCategory] = useState<AdminCategory | null>(null);
 
@@ -135,6 +138,7 @@ export default function AdminPage() {
     categoryId: '',
     label: '',
     description: '',
+    status: 'published',
   });
   const [deletingSubcategory, setDeletingSubcategory] = useState<{
     categoryId: string;
@@ -226,6 +230,7 @@ export default function AdminPage() {
             label: cat.label,
             description: cat.description || '',
             order_index: typeof cat.order_index === 'number' ? cat.order_index : 9999,
+            status: (cat.status || 'published') as 'published' | 'archived',
             subcategories: (subcatRows || [])
               .filter((s) => s.category_id === cat.id)
               .sort((a, b) => {
@@ -238,6 +243,7 @@ export default function AdminPage() {
                 label: s.label,
                 description: s.description || '',
                 order_index: typeof s.order_index === 'number' ? s.order_index : 9999,
+                status: (s.status || 'published') as 'published' | 'archived',
               })),
           }));
         setCategoriesList(structured);
@@ -256,16 +262,20 @@ export default function AdminPage() {
           type,
           video_url,
           status,
+          order_index,
           created_at,
           subcategories:subcategory_id (
             id,
             label,
+            status,
             categories:category_id (
               id,
-              label
+              label,
+              status
             )
           )
         `)
+        .order('order_index', { ascending: true })
         .order('created_at', { ascending: false });
 
       if (dbContents) {
@@ -282,6 +292,7 @@ export default function AdminPage() {
           image: d.image_url,
           videoUrl: d.video_url || undefined,
           status: (d.status || 'published') as 'draft' | 'published' | 'archived',
+          order_index: d.order_index ?? 0,
         }));
         setItems(mapped);
       } else {
@@ -1219,9 +1230,45 @@ export default function AdminPage() {
   };
 
   // Category CRUD Handlers
+  const handleToggleCategoryStatus = async (cat: AdminCategory) => {
+    const newStatus: 'published' | 'archived' =
+      cat.status === 'archived' ? 'published' : 'archived';
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (cat.id && !cat.id.startsWith('cat-')) {
+          const { error } = await supabase
+            .from('categories')
+            .update({
+              status: newStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', cat.id);
+          if (error) {
+            console.warn('Category status update error:', error);
+            showToast(`Failed to update status: ${error.message}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Category status update notice:', err);
+      }
+    }
+
+    setCategoriesList((prev) =>
+      prev.map((c) => (c.id === cat.id ? { ...c, status: newStatus } : c))
+    );
+
+    showToast(
+      newStatus === 'archived'
+        ? `Category "${cat.label}" and its works are now hidden (archived).`
+        : `Category "${cat.label}" is now visible (published).`
+    );
+  };
+
   const openCreateCategoryModal = () => {
     setCategoryModalMode('create');
-    setCategoryFormData({ id: '', label: '', description: '' });
+    setCategoryFormData({ id: '', label: '', description: '', status: 'published' });
     setIsCategoryModalOpen(true);
   };
 
@@ -1231,6 +1278,7 @@ export default function AdminPage() {
       id: cat.id,
       label: cat.label,
       description: cat.description || '',
+      status: (cat.status as 'published' | 'archived') || 'published',
     });
     setIsCategoryModalOpen(true);
   };
@@ -1258,6 +1306,7 @@ export default function AdminPage() {
               .insert({
                 label: categoryFormData.label.trim(),
                 description: categoryFormData.description.trim() || null,
+                status: categoryFormData.status || 'published',
               })
               .select()
               .single();
@@ -1271,6 +1320,7 @@ export default function AdminPage() {
           id: newId,
           label: categoryFormData.label.trim(),
           description: categoryFormData.description.trim(),
+          status: categoryFormData.status || 'published',
           subcategories: [],
         };
         setCategoriesList((prev) => [...prev, newCategory]);
@@ -1284,6 +1334,7 @@ export default function AdminPage() {
                 .update({
                   label: categoryFormData.label.trim(),
                   description: categoryFormData.description.trim() || null,
+                  status: categoryFormData.status || 'published',
                   updated_at: new Date().toISOString(),
                 })
                 .eq('id', categoryFormData.id);
@@ -1300,6 +1351,7 @@ export default function AdminPage() {
                   ...c,
                   label: categoryFormData.label.trim(),
                   description: categoryFormData.description.trim(),
+                  status: categoryFormData.status || 'published',
                 }
               : c
           )
@@ -1373,6 +1425,54 @@ export default function AdminPage() {
   };
 
   // Subcategory CRUD Handlers
+  const handleToggleSubcategoryStatus = async (
+    categoryId: string,
+    sub: AdminSubCategory
+  ) => {
+    const newStatus: 'published' | 'archived' =
+      sub.status === 'archived' ? 'published' : 'archived';
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (sub.id && !sub.id.startsWith('sub-')) {
+          const { error } = await supabase
+            .from('subcategories')
+            .update({
+              status: newStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sub.id);
+          if (error) {
+            console.warn('Subcategory status update error:', error);
+            showToast(`Failed to update status: ${error.message}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Subcategory status update notice:', err);
+      }
+    }
+
+    setCategoriesList((prev) =>
+      prev.map((c) =>
+        c.id === categoryId
+          ? {
+              ...c,
+              subcategories: c.subcategories.map((s) =>
+                s.id === sub.id ? { ...s, status: newStatus } : s
+              ),
+            }
+          : c
+      )
+    );
+
+    showToast(
+      newStatus === 'archived'
+        ? `Subcategory "${sub.label}" and its works are now hidden (archived).`
+        : `Subcategory "${sub.label}" is now visible (published).`
+    );
+  };
+
   const openCreateSubcategoryModal = (parentCatId?: string) => {
     if (categoriesList.length === 0) {
       showToast('Please create a category first before adding subcategories.');
@@ -1385,6 +1485,7 @@ export default function AdminPage() {
       categoryId: targetCatId,
       label: '',
       description: '',
+      status: 'published',
     });
     setIsSubcategoryModalOpen(true);
   };
@@ -1396,6 +1497,7 @@ export default function AdminPage() {
       categoryId: categoryId,
       label: sub.label,
       description: sub.description || '',
+      status: (sub.status as 'published' | 'archived') || 'published',
     });
     setIsSubcategoryModalOpen(true);
   };
@@ -1432,6 +1534,7 @@ export default function AdminPage() {
                   category_id: parentCatId,
                   label: subcategoryFormData.label.trim(),
                   description: subcategoryFormData.description.trim() || null,
+                  status: subcategoryFormData.status || 'published',
                 })
                 .select()
                 .single();
@@ -1446,6 +1549,7 @@ export default function AdminPage() {
           id: newId,
           label: subcategoryFormData.label.trim(),
           description: subcategoryFormData.description.trim(),
+          status: subcategoryFormData.status || 'published',
         };
 
         setCategoriesList((prev) =>
@@ -1463,6 +1567,7 @@ export default function AdminPage() {
                 .update({
                   label: subcategoryFormData.label.trim(),
                   description: subcategoryFormData.description.trim() || null,
+                  status: subcategoryFormData.status || 'published',
                   updated_at: new Date().toISOString(),
                 })
                 .eq('id', subcategoryFormData.id);
@@ -1484,6 +1589,7 @@ export default function AdminPage() {
                     id: subcategoryFormData.id,
                     label: subcategoryFormData.label.trim(),
                     description: subcategoryFormData.description.trim(),
+                    status: subcategoryFormData.status || 'published',
                   },
                 ],
               };
@@ -1570,13 +1676,33 @@ export default function AdminPage() {
 
   // Filtered items computation
   const filteredItems = items.filter((item) => {
+    const parentCat = categoriesList.find(
+      (c) =>
+        c.id === item.category ||
+        (c.label && item.categoryLabel && c.label.toLowerCase() === item.categoryLabel.toLowerCase())
+    );
+    const isCatArchived = parentCat?.status === 'archived';
+    const parentSub = parentCat?.subcategories.find(
+      (s) =>
+        s.id === item.subcategory ||
+        (s.label && item.subcategoryLabel && s.label.toLowerCase() === item.subcategoryLabel.toLowerCase())
+    );
+    const isSubArchived = parentSub?.status === 'archived';
+    const isEffectivelyArchived = item.status === 'archived' || isCatArchived || isSubArchived;
+
     const matchesCat =
       selectedCategory === 'all' ||
       item.category === selectedCategory ||
       item.categoryLabel.toLowerCase() === selectedCategory.toLowerCase();
 
     const matchesStatus =
-      selectedStatus === 'all' || (item.status || 'published') === selectedStatus;
+      selectedStatus === 'all'
+        ? true
+        : selectedStatus === 'archived'
+        ? isEffectivelyArchived
+        : selectedStatus === 'published'
+        ? (item.status || 'published') === 'published' && !isCatArchived && !isSubArchived
+        : (item.status || 'published') === selectedStatus;
 
     const matchesQuery =
       searchQuery.trim() === '' ||
@@ -1586,6 +1712,13 @@ export default function AdminPage() {
 
     return matchesCat && matchesStatus && matchesQuery;
   });
+
+  const handleNavigateToLayout = (subcategoryId?: string) => {
+    if (subcategoryId) {
+      setSelectedLayoutSubcategoryId(subcategoryId);
+    }
+    setActiveTab('layout');
+  };
 
   const isContentFormValid = Boolean(
     contentFormData.categoryId &&
@@ -1685,6 +1818,7 @@ export default function AdminPage() {
               onOpenBulkEdit={openBulkEditModal}
               onOpenBulkDelete={() => setIsBulkDeleteModalOpen(true)}
               onDeselectAll={() => setSelectedItemIds([])}
+              onNavigateToLayout={handleNavigateToLayout}
             />
           )}
 
@@ -1700,6 +1834,20 @@ export default function AdminPage() {
               onOpenDeleteSubcategory={(catId, sub) =>
                 setDeletingSubcategory({ categoryId: catId, subcategory: sub })
               }
+              onToggleCategoryStatus={handleToggleCategoryStatus}
+              onToggleSubcategoryStatus={handleToggleSubcategoryStatus}
+              onNavigateToLayout={handleNavigateToLayout}
+            />
+          )}
+
+          {activeTab === 'layout' && (
+            <LayoutTab
+              categoriesList={categoriesList}
+              items={items}
+              selectedSubcategoryId={selectedLayoutSubcategoryId}
+              onSubcategoryChange={setSelectedLayoutSubcategoryId}
+              onRefreshData={loadDatabaseData}
+              showToast={showToast}
             />
           )}
         </div>

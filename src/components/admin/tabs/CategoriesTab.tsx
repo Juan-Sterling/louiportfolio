@@ -6,6 +6,9 @@ import {
   Plus,
   Edit3,
   Trash2,
+  Eye,
+  EyeOff,
+  LayoutGrid,
 } from 'lucide-react';
 import { AdminCategory, AdminSubCategory } from '@/types/admin';
 import { MediaItem } from '@/data/portfolioData';
@@ -19,6 +22,9 @@ interface CategoriesTabProps {
   onOpenCreateSubcategory: (parentCategoryId?: string) => void;
   onOpenEditSubcategory: (categoryId: string, subcategory: AdminSubCategory) => void;
   onOpenDeleteSubcategory: (categoryId: string, subcategory: AdminSubCategory) => void;
+  onToggleCategoryStatus?: (category: AdminCategory) => void;
+  onToggleSubcategoryStatus?: (categoryId: string, subcategory: AdminSubCategory) => void;
+  onNavigateToLayout?: (subcategoryId: string) => void;
 }
 
 export default function CategoriesTab({
@@ -30,6 +36,9 @@ export default function CategoriesTab({
   onOpenCreateSubcategory,
   onOpenEditSubcategory,
   onOpenDeleteSubcategory,
+  onToggleCategoryStatus,
+  onToggleSubcategoryStatus,
+  onNavigateToLayout,
 }: CategoriesTabProps) {
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -40,7 +49,7 @@ export default function CategoriesTab({
             Manage Categories & Subcategories
           </h3>
           <p className="text-xs sm:text-sm text-neutral-400 font-sans">
-            Create, edit, or delete main categories and subcategories freely.
+            Create, edit, hide (archive), or delete main categories and subcategories.
           </p>
         </div>
 
@@ -93,19 +102,61 @@ export default function CategoriesTab({
               );
             }).length;
             const isCatInUse = childSubcategoriesCount > 0 || linkedContentsCount > 0;
+            const isCatArchived = cat.status === 'archived';
 
             return (
               <div
                 key={cat.id}
-                className="bg-[#15151a] border border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col justify-between"
+                className={`border rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all ${
+                  isCatArchived
+                    ? 'bg-[#121216] border-white/5 opacity-90'
+                    : 'bg-[#15151a] border-white/10'
+                }`}
               >
                 <div>
                   {/* Card Header */}
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-mono bg-white/10 text-white px-2.5 py-0.5 rounded-full">
-                      {linkedContentsCount} Works
-                    </span>
                     <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono bg-white/10 text-white px-2.5 py-0.5 rounded-full">
+                        {linkedContentsCount} Works
+                      </span>
+                      {isCatArchived ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          <EyeOff className="w-3 h-3" />
+                          Hidden
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          <Eye className="w-3 h-3" />
+                          Visible
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Hide / Unhide Category button */}
+                      <button
+                        type="button"
+                        onClick={() => onToggleCategoryStatus?.(cat)}
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                          isCatArchived
+                            ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300'
+                            : 'bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white'
+                        }`}
+                        title={
+                          isCatArchived
+                            ? 'Unhide Category (Make visible on main page)'
+                            : 'Hide Category (Archive and hide from main page)'
+                        }
+                      >
+                        {isCatArchived ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+
+                      {/* Edit Button */}
                       <button
                         type="button"
                         onClick={() => onOpenEditCategory(cat)}
@@ -114,6 +165,8 @@ export default function CategoriesTab({
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
+
+                      {/* Delete Button */}
                       <button
                         type="button"
                         onClick={() => onOpenDeleteCategory(cat)}
@@ -133,9 +186,20 @@ export default function CategoriesTab({
                     </div>
                   </div>
 
-                  <h3 className="font-heading font-black text-2xl uppercase tracking-tight text-white mb-2">
-                    {cat.label}
+                  <h3 className="font-heading font-black text-2xl uppercase tracking-tight text-white mb-2 flex items-center gap-2">
+                    <span className={isCatArchived ? 'text-neutral-300' : 'text-white'}>
+                      {cat.label}
+                    </span>
                   </h3>
+
+                  {isCatArchived && (
+                    <div className="mb-4 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2 font-sans">
+                      <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        Category is hidden. All contents in this category are automatically hidden (archived) from the main website.
+                      </span>
+                    </div>
+                  )}
 
                   <p className="text-xs text-neutral-400 font-sans leading-relaxed mb-6">
                     {cat.description || 'No additional description provided.'}
@@ -173,22 +237,68 @@ export default function CategoriesTab({
                               i.subcategoryLabel.toLowerCase() === sub.label.toLowerCase())
                         ).length;
                         const isSubInUse = subItemCount > 0;
+                        const isSubArchived = sub.status === 'archived';
 
                         return (
                           <div
                             key={sub.id}
-                            className="group flex items-center gap-2 text-xs bg-white/5 hover:bg-white/10 border border-white/10 pl-3 pr-2 py-1.5 rounded-xl text-neutral-200 transition-all"
+                            className={`group flex items-center gap-2 text-xs border pl-3 pr-2 py-1.5 rounded-xl transition-all ${
+                              isSubArchived
+                                ? 'bg-white/[0.03] border-white/5 text-neutral-400'
+                                : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-200'
+                            }`}
                           >
-                            <span>{sub.label}</span>
-                            {subItemCount > 0 && (
-                              <span
-                                className="text-[10px] font-mono text-neutral-400 bg-black/40 px-1.5 py-0.5 rounded-md"
-                                title={`${subItemCount} works in this subcategory`}
-                              >
-                                {subItemCount}
+                            <span className={isSubArchived ? 'line-through text-neutral-500' : ''}>
+                              {sub.label}
+                            </span>
+                            {isSubArchived ? (
+                              <span className="text-[9px] font-mono uppercase bg-neutral-800 text-amber-400/90 px-1.5 py-0.5 rounded flex items-center gap-1 font-semibold">
+                                <EyeOff className="w-2.5 h-2.5" /> Hidden
                               </span>
+                            ) : (
+                              subItemCount > 0 && (
+                                <span
+                                  className="text-[10px] font-mono text-neutral-400 bg-black/40 px-1.5 py-0.5 rounded-md"
+                                  title={`${subItemCount} works in this subcategory`}
+                                >
+                                  {subItemCount}
+                                </span>
+                              )
                             )}
                             <div className="flex items-center gap-0.5 ml-1">
+                              {/* Open Custom Layout for this Subcategory */}
+                              {onNavigateToLayout && (
+                                <button
+                                  type="button"
+                                  onClick={() => onNavigateToLayout(sub.id)}
+                                  className="p-1 text-amber-400 hover:text-amber-300 transition-colors"
+                                  title={`Atur Tata Letak Galeri untuk "${sub.label}"`}
+                                >
+                                  <LayoutGrid className="w-3 h-3" />
+                                </button>
+                              )}
+
+                              {/* Toggle Subcategory Visibility */}
+                              <button
+                                type="button"
+                                onClick={() => onToggleSubcategoryStatus?.(cat.id, sub)}
+                                className={`p-1 transition-colors ${
+                                  isSubArchived
+                                    ? 'text-amber-400 hover:text-amber-300'
+                                    : 'text-neutral-400 hover:text-white'
+                                }`}
+                                title={
+                                  isSubArchived
+                                    ? 'Unhide Subcategory (Make visible)'
+                                    : 'Hide Subcategory (Archive)'
+                                }
+                              >
+                                {isSubArchived ? (
+                                  <EyeOff className="w-3 h-3" />
+                                ) : (
+                                  <Eye className="w-3 h-3" />
+                                )}
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => onOpenEditSubcategory(cat.id, sub)}

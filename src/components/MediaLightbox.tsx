@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import {
   X,
@@ -61,6 +61,78 @@ export default function MediaLightbox({
   const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
   const isVideoPlayingRef = useRef<boolean>(true);
   const [playPauseFeedback, setPlayPauseFeedback] = useState<'play' | 'pause' | null>(null);
+
+  // Dynamic video dimensions & aspect ratio
+  const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  // Probe video poster/thumbnail image on mount or item change to pre-detect aspect ratio
+  useEffect(() => {
+    if (!isOpen || !currentItem || currentItem.type !== 'video') {
+      setVideoDimensions(null);
+      return;
+    }
+
+    setVideoDimensions(null);
+    let isCancelled = false;
+
+    // 1. If explicit aspect string (e.g. "3:4", "9:16", "1:1", "16:9") is provided
+    if (currentItem.aspect) {
+      const parts = currentItem.aspect.split(/[:/]/);
+      if (parts.length === 2) {
+        const w = parseFloat(parts[0]);
+        const h = parseFloat(parts[1]);
+        if (w > 0 && h > 0) {
+          setVideoDimensions({ width: w, height: h });
+          return;
+        }
+      }
+    }
+
+    // 2. Probe thumbnail image to instantly obtain natural aspect ratio
+    const thumbUrl = currentItem.image || (currentItem.videoUrl ? getYouTubeThumbnail(currentItem.videoUrl) : '');
+    if (thumbUrl) {
+      const img = new window.Image();
+      img.src = thumbUrl;
+      const onImgReady = () => {
+        if (!isCancelled && img.naturalWidth && img.naturalHeight && img.naturalHeight > 0) {
+          setVideoDimensions((prev) => prev || { width: img.naturalWidth, height: img.naturalHeight });
+        }
+      };
+      if (img.complete && img.naturalWidth && img.naturalHeight) {
+        onImgReady();
+      } else {
+        img.onload = onImgReady;
+      }
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentIndex, isOpen, currentItem]);
+
+  // Compute exact aspect ratio (width / height)
+  const activeVideoRatio = useMemo(() => {
+    if (!currentItem || currentItem.type !== 'video') return 16 / 9;
+
+    if (videoDimensions && videoDimensions.width > 0 && videoDimensions.height > 0) {
+      return Number((videoDimensions.width / videoDimensions.height).toFixed(4));
+    }
+
+    if (currentItem.aspect) {
+      const parts = currentItem.aspect.split(/[:/]/);
+      if (parts.length === 2) {
+        const w = parseFloat(parts[0]);
+        const h = parseFloat(parts[1]);
+        if (w > 0 && h > 0) return Number((w / h).toFixed(4));
+      }
+    }
+
+    if (currentItem.videoUrl?.includes('/shorts/')) {
+      return 9 / 16;
+    }
+
+    return 16 / 9;
+  }, [currentItem, videoDimensions]);
 
   // Single-click timer ref to cleanly separate single-click (toggle UI) from double-click (zoom)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -982,11 +1054,11 @@ export default function MediaLightbox({
           /* Video Modal Player (YouTube or Direct Cloudflare R2 / MP4) */
           <div
             key={currentItem.id || currentIndex}
-            className={`relative w-full ${
-              currentItem.videoUrl?.includes('/shorts/')
-                ? 'aspect-[4/5] max-w-lg sm:max-w-xl md:max-w-2xl'
-                : 'aspect-video max-w-6xl xl:max-w-7xl 2xl:max-w-[1450px]'
-            } max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center`}
+            style={{
+              aspectRatio: `${activeVideoRatio}`,
+              maxWidth: `min(94vw, calc(${showThumbnails ? 'calc(100vh - 165px)' : 'calc(100vh - 95px)'} * ${activeVideoRatio}), 1450px)`,
+            }}
+            className="relative w-full max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center mx-auto transition-all duration-300"
           >
             {isYouTubeUrl(currentItem.videoUrl) ? (
               <>
@@ -1070,7 +1142,13 @@ export default function MediaLightbox({
                   autoPlay
                   playsInline
                   preload="metadata"
-                  className="w-full h-full max-h-[85vh] object-contain rounded-2xl"
+                  onLoadedMetadata={(e) => {
+                    const { videoWidth, videoHeight } = e.currentTarget;
+                    if (videoWidth && videoHeight && videoHeight > 0) {
+                      setVideoDimensions({ width: videoWidth, height: videoHeight });
+                    }
+                  }}
+                  className="w-full h-full max-h-[85vh] object-contain rounded-2xl md:rounded-3xl"
                   onPlay={() => {
                     isVideoPlayingRef.current = true;
                     setIsVideoPlaying(true);

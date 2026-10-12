@@ -138,7 +138,7 @@ export default function BulkModals({
                         ) : (
                           sortedCategories.map((c) => (
                             <option key={c.id} value={c.id}>
-                              {c.label}
+                              {c.label} {c.status === 'archived' ? '(Hidden)' : ''}
                             </option>
                           ))
                         )}
@@ -161,7 +161,7 @@ export default function BulkModals({
                         ) : (
                           bulkAvailableSubcategories.map((sub) => (
                             <option key={sub.id} value={sub.id}>
-                              {sub.label}
+                              {sub.label} {sub.status === 'archived' ? '(Hidden)' : ''}
                             </option>
                           ))
                         )}

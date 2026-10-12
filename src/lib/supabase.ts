@@ -23,6 +23,7 @@ export interface DBCategory {
   key?: string;
   description?: string;
   order_index?: number;
+  status?: 'draft' | 'published' | 'archived';
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +35,7 @@ export interface DBSubcategory {
   key?: string;
   description?: string;
   order_index?: number;
+  status?: 'draft' | 'published' | 'archived';
   created_at: string;
   updated_at: string;
 }

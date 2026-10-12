@@ -5,10 +5,12 @@ export interface GalleryCategory {
   id: string;
   label: string;
   description: string;
+  status?: 'published' | 'archived' | 'draft';
   subcategories: Array<{
     id: string;
     label: string;
     description: string;
+    status?: 'published' | 'archived' | 'draft';
   }>;
 }
 
@@ -49,18 +51,22 @@ export async function getGalleryData(): Promise<{
         type,
         video_url,
         status,
+        order_index,
         created_at,
         subcategories:subcategory_id (
           id,
           label,
           category_id,
+          status,
           categories:category_id (
             id,
-            label
+            label,
+            status
           )
         )
       `)
       .eq('status', 'published')
+      .order('order_index', { ascending: true })
       .order('created_at', { ascending: false });
 
     if (catError || subError || contentError) {
@@ -75,18 +81,29 @@ export async function getGalleryData(): Promise<{
       };
     }
 
+    // Active (non-archived) categories & subcategories sets
+    const activeCats = (catData || []).filter((c) => c.status !== 'archived');
+    const activeCatIds = new Set(activeCats.map((c) => c.id));
+
+    const activeSubs = (subData || []).filter(
+      (s) => s.status !== 'archived' && activeCatIds.has(s.category_id)
+    );
+    const activeSubIds = new Set(activeSubs.map((s) => s.id));
+
     let categories: GalleryCategory[] = [];
-    if (catData && catData.length > 0) {
-      categories = catData.map((c) => ({
+    if (activeCats.length > 0) {
+      categories = activeCats.map((c) => ({
         id: c.id,
         label: c.label,
         description: c.description || '',
-        subcategories: (subData || [])
+        status: (c.status || 'published') as 'published' | 'archived' | 'draft',
+        subcategories: activeSubs
           .filter((s) => s.category_id === c.id)
           .map((s) => ({
             id: s.id,
             label: s.label,
             description: s.description || '',
+            status: (s.status || 'published') as 'published' | 'archived' | 'draft',
           })),
       }));
     }
@@ -94,18 +111,39 @@ export async function getGalleryData(): Promise<{
     let items: MediaItem[] = [];
     if (contentData && contentData.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      items = contentData.map((d: any) => ({
-        id: d.id,
-        category: (d.subcategories?.categories?.id || 'photography') as any,
-        categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
-        subcategory: d.subcategories?.id || d.subcategory_id,
-        subcategoryLabel: d.subcategories?.label || 'Portfolio',
-        description: d.description || '',
-        type: (d.type || 'photo') as 'photo' | 'video',
-        image: d.image_url,
-        videoUrl: d.video_url || undefined,
-        aspect: d.aspect || undefined,
-      }));
+      items = contentData
+        .filter((d: any) => {
+          // Verify content's own status
+          if (d.status && d.status !== 'published') return false;
+
+          const sub = d.subcategories;
+          const cat = sub?.categories;
+
+          // If subcategory or category is archived, hide this content
+          if (sub?.status === 'archived' || cat?.status === 'archived') return false;
+
+          const subId = sub?.id || d.subcategory_id;
+          const catId = cat?.id || sub?.category_id;
+
+          // Ensure it belongs to active subcategory and category
+          if (subId && !activeSubIds.has(subId)) return false;
+          if (catId && !activeCatIds.has(catId)) return false;
+
+          return true;
+        })
+        .map((d: any) => ({
+          id: d.id,
+          category: (d.subcategories?.categories?.id || 'photography') as any,
+          categoryLabel: d.subcategories?.categories?.label || 'Portfolio',
+          subcategory: d.subcategories?.id || d.subcategory_id,
+          subcategoryLabel: d.subcategories?.label || 'Portfolio',
+          description: d.description || '',
+          type: (d.type || 'photo') as 'photo' | 'video',
+          image: d.image_url,
+          videoUrl: d.video_url || undefined,
+          aspect: d.aspect || undefined,
+          order_index: d.order_index ?? 0,
+        }));
     }
 
     return {

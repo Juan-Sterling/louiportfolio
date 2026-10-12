@@ -15,6 +15,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Layers,
+  LayoutGrid,
 } from 'lucide-react';
 import { AdminCategory } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
@@ -41,6 +42,7 @@ interface ContentsTabProps {
   onOpenBulkEdit: () => void;
   onOpenBulkDelete: () => void;
   onDeselectAll: () => void;
+  onNavigateToLayout?: (subcategoryId?: string) => void;
 }
 
 function getPageNumbers(current: number, total: number): (number | string)[] {
@@ -76,6 +78,7 @@ export default function ContentsTab({
   onOpenBulkEdit,
   onOpenBulkDelete,
   onDeselectAll,
+  onNavigateToLayout,
 }: ContentsTabProps) {
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -151,7 +154,7 @@ export default function ContentsTab({
               .sort((a, b) => (a.order_index ?? 9999) - (b.order_index ?? 9999))
               .map((cat) => (
                 <option key={cat.id} value={cat.label}>
-                  {cat.label}
+                  {cat.label} {cat.status === 'archived' ? '(Hidden)' : ''}
                 </option>
               ))}
           </select>
@@ -163,9 +166,21 @@ export default function ContentsTab({
           >
             <option value="all">All Status</option>
             <option value="published">Published (Live)</option>
-            <option value="draft">Draft (Hidden)</option>
-            <option value="archived">Archived</option>
+            <option value="draft">Draft (Admin Only)</option>
+            <option value="archived">Archived / Hidden</option>
           </select>
+
+          {onNavigateToLayout && (
+            <button
+              type="button"
+              onClick={() => onNavigateToLayout()}
+              className="bg-amber-500/15 hover:bg-amber-500 border border-amber-500/30 hover:border-amber-500 text-amber-300 hover:text-black font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+              title="Manage Gallery Layout"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Layout</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -310,8 +325,18 @@ export default function ContentsTab({
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-heading font-bold text-sm text-white uppercase tracking-tight line-clamp-1">
-                            {item.subcategoryLabel}
+                          <div className="flex items-center gap-2">
+                            <span className="font-heading font-bold text-sm text-white uppercase tracking-tight line-clamp-1">
+                              {item.subcategoryLabel}
+                            </span>
+                            {item.order_index && item.order_index > 0 ? (
+                              <span
+                                className="inline-flex items-center text-[10px] font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 rounded-full shrink-0"
+                                title={`Featured in Slot #${item.order_index}`}
+                              >
+                                <span>Slot #{item.order_index}</span>
+                              </span>
+                            ) : null}
                           </div>
                           <div className="text-xs text-neutral-400 line-clamp-1 font-sans">
                             {item.description || 'No description'}
@@ -349,27 +374,84 @@ export default function ContentsTab({
 
                     {/* Status */}
                     <td className="py-4 px-6">
-                      {item.status === 'draft' ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                          <span>Draft</span>
-                        </span>
-                      ) : item.status === 'archived' ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 bg-neutral-500/10 border border-neutral-500/20 px-2.5 py-1 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
-                          <span>Archived</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          <span>Published</span>
-                        </span>
-                      )}
+                      {(() => {
+                        const parentCat = categoriesList.find(
+                          (c) =>
+                            c.id === item.category ||
+                            (c.label &&
+                              item.categoryLabel &&
+                              c.label.toLowerCase() === item.categoryLabel.toLowerCase())
+                        );
+                        const isCatArchived = parentCat?.status === 'archived';
+                        const parentSub = parentCat?.subcategories.find(
+                          (s) =>
+                            s.id === item.subcategory ||
+                            (s.label &&
+                              item.subcategoryLabel &&
+                              s.label.toLowerCase() === item.subcategoryLabel.toLowerCase())
+                        );
+                        const isSubArchived = parentSub?.status === 'archived';
+
+                        if (item.status === 'draft') {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span>Draft</span>
+                            </span>
+                          );
+                        }
+                        if (item.status === 'archived') {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 bg-neutral-500/10 border border-neutral-500/20 px-2.5 py-1 rounded-full">
+                              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                              <span>Archived</span>
+                            </span>
+                          );
+                        }
+                        if (isCatArchived) {
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-full"
+                              title="Category is hidden (archived), so this work is automatically hidden from the main website."
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span>Hidden (Cat)</span>
+                            </span>
+                          );
+                        }
+                        if (isSubArchived) {
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-full"
+                              title="Subcategory is hidden (archived), so this work is automatically hidden from the main website."
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                              <span>Hidden (Sub)</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            <span>Published</span>
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Actions */}
                     <td className="py-4 px-6 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {onNavigateToLayout && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToLayout(item.subcategory)}
+                            className="w-8 h-8 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 flex items-center justify-center transition-all"
+                            title={`Manage Layout for (${item.subcategoryLabel})`}
+                          >
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => onOpenEditContent(item)}

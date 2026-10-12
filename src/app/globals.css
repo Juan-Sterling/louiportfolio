@@ -191,6 +191,14 @@ html.lenis body {
   width: 100%;
 }
 
+/* Deterministic multi-column top alignment for custom showcase slots */
+@media (min-width: 1024px) {
+  .lg-break-before-column {
+    break-before: column !important;
+    -webkit-column-break-before: always !important;
+  }
+}
+
 .animate-fadeIn {
   animation: entranceSimpleFade 0.22s ease-out both;
 }

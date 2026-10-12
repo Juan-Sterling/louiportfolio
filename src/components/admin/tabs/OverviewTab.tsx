@@ -144,9 +144,16 @@ export default function OverviewTab({
                     {/* Category Header */}
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <h4 className="font-heading font-bold text-base uppercase text-white tracking-tight">
-                          {cat.label}
-                        </h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-heading font-bold text-base uppercase text-white tracking-tight">
+                            {cat.label}
+                          </h4>
+                          {cat.status === 'archived' && (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
                         {cat.description && (
                           <p className="text-xs text-neutral-400 line-clamp-1 mt-0.5 font-sans">
                             {cat.description}
@@ -191,15 +198,23 @@ export default function OverviewTab({
                                   i.subcategoryLabel.toLowerCase() ===
                                     sub.label.toLowerCase())
                             ).length;
+                            const isSubArchived = sub.status === 'archived';
 
                             return (
                               <div
                                 key={sub.id}
                                 className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] transition-colors"
                               >
-                                <span className="text-xs text-neutral-300 font-medium truncate mr-2">
-                                  {sub.label}
-                                </span>
+                                <div className="flex items-center gap-1.5 truncate mr-2">
+                                  <span className={`text-xs font-medium truncate ${isSubArchived ? 'text-neutral-500 line-through' : 'text-neutral-300'}`}>
+                                    {sub.label}
+                                  </span>
+                                  {isSubArchived && (
+                                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-amber-300/80 shrink-0">
+                                      Hidden
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-white/10 text-neutral-200 shrink-0">
                                   {subCount}
                                 </span>

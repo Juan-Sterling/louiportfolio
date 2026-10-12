@@ -19,6 +19,7 @@ interface GalleryCardProps {
   isInitialEntrance?: boolean;
   onOpenLightbox: (index: number) => void;
   aspectRatio?: number;
+  isColumnBreak?: boolean;
 }
 
 function GalleryCard({
@@ -29,10 +30,13 @@ function GalleryCard({
   isInitialEntrance = true,
   onOpenLightbox,
   aspectRatio,
+  isColumnBreak = false,
 }: GalleryCardProps) {
   // Video preview states
   const [isPreviewActive, setIsPreviewActive] = useState<boolean>(false);
   const [isMediaReady, setIsMediaReady] = useState<boolean>(false);
+  const [isBuffering, setIsBuffering] = useState<boolean>(false);
+  const [playbackProgress, setPlaybackProgress] = useState<number>(0);
   const [hasCompletedPreview, setHasCompletedPreview] = useState<boolean>(false);
   const [previewDuration, setPreviewDuration] = useState<number>(10);
 
@@ -67,7 +71,6 @@ function GalleryCard({
     width: 1200,
   });
 
-
   // Clear all pending timers and reset video element
   const clearTimers = useCallback(() => {
     if (debounceTimerRef.current) {
@@ -86,6 +89,7 @@ function GalleryCard({
         // Ignore video pause errors
       }
     }
+    setPlaybackProgress(0);
   }, []);
 
   // Gracefully end the 10-second preview
@@ -93,7 +97,9 @@ function GalleryCard({
     clearTimers();
     setIsPreviewActive(false);
     setIsMediaReady(false);
+    setIsBuffering(false);
     setHasCompletedPreview(true);
+    setPlaybackProgress(0);
   }, [clearTimers]);
 
   // Mouse enter: trigger debounced video preview
@@ -102,16 +108,14 @@ function GalleryCard({
       clearTimers();
       setHasCompletedPreview(false);
       setPreviewDuration(10);
+      setPlaybackProgress(0);
 
       // Debounce slightly (220ms) so fast mouse passes across the grid don't trigger iframes
       debounceTimerRef.current = setTimeout(() => {
         setIsPreviewActive(true);
         setIsMediaReady(false);
-
-        // Preview limit fallback: 10s (disesuaikan otomatis jika durasi asli < 10s)
-        durationTimerRef.current = setTimeout(() => {
-          handlePreviewEnd();
-        }, 10000);
+        setIsBuffering(true);
+        // Do NOT start countdown timer here; wait until media is actually ready and playing
       }, 220);
     }
   };
@@ -121,8 +125,10 @@ function GalleryCard({
     clearTimers();
     setIsPreviewActive(false);
     setIsMediaReady(false);
+    setIsBuffering(false);
     setHasCompletedPreview(false);
     setPreviewDuration(10);
+    setPlaybackProgress(0);
   };
 
   // Clean up timers on unmount
@@ -137,13 +143,19 @@ function GalleryCard({
     clearTimers();
     setIsPreviewActive(false);
     setIsMediaReady(false);
+    setIsBuffering(false);
     setHasCompletedPreview(false);
     setPreviewDuration(10);
+    setPlaybackProgress(0);
     onOpenLightbox(fullIndex !== -1 ? fullIndex : idx);
   };
 
   return (
-    <div className="break-inside-avoid mb-6 md:mb-7 block w-full">
+    <div
+      className={`break-inside-avoid mb-6 md:mb-7 block w-full ${
+        isColumnBreak ? 'lg-break-before-column' : ''
+      }`}
+    >
       <div
         className={animationClass}
         style={{
@@ -196,7 +208,18 @@ function GalleryCard({
                     src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&modestbranding=1&loop=0&start=0&end=10&playsinline=1&enablejsapi=1&iv_load_policy=3&disablekb=1`}
                     title={item.subcategoryLabel || 'Video Preview'}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    onLoad={() => setIsMediaReady(true)}
+                    onLoad={() => {
+                      setTimeout(() => {
+                        setIsMediaReady(true);
+                        setIsBuffering(false);
+                        if (durationTimerRef.current) {
+                          clearTimeout(durationTimerRef.current);
+                        }
+                        durationTimerRef.current = setTimeout(() => {
+                          handlePreviewEnd();
+                        }, 10000);
+                      }, 400);
+                    }}
                     className="w-full h-full object-cover pointer-events-none scale-[1.04]"
                   />
                 ) : (
@@ -215,34 +238,35 @@ function GalleryCard({
                       if (dur && isFinite(dur) && dur > 0) {
                         const effective = dur < 10 ? dur : 10;
                         setPreviewDuration(effective);
-                        if (durationTimerRef.current) {
-                          clearTimeout(durationTimerRef.current);
-                          const remainingTime = Math.max(0, effective - e.currentTarget.currentTime) * 1000;
-                          durationTimerRef.current = setTimeout(() => {
-                            handlePreviewEnd();
-                          }, remainingTime);
-                        }
                       }
                     }}
-                    onLoadedData={(e) => {
-                      setIsMediaReady(true);
-                      const dur = e.currentTarget.duration;
-                      if (dur && isFinite(dur) && dur > 0) {
-                        const effective = dur < 10 ? dur : 10;
-                        setPreviewDuration(effective);
-                        if (durationTimerRef.current) {
-                          clearTimeout(durationTimerRef.current);
-                          const remainingTime = Math.max(0, effective - e.currentTarget.currentTime) * 1000;
-                          durationTimerRef.current = setTimeout(() => {
-                            handlePreviewEnd();
-                          }, remainingTime);
-                        }
+                    onWaiting={() => {
+                      setIsBuffering(true);
+                      if (durationTimerRef.current) {
+                        clearTimeout(durationTimerRef.current);
+                        durationTimerRef.current = null;
                       }
+                    }}
+                    onPlaying={(e) => {
+                      setIsMediaReady(true);
+                      setIsBuffering(false);
+                      const cur = e.currentTarget.currentTime;
+                      const dur = previewDuration;
+                      const remainingTime = Math.max(0, dur - cur) * 1000;
+                      if (durationTimerRef.current) {
+                        clearTimeout(durationTimerRef.current);
+                      }
+                      durationTimerRef.current = setTimeout(() => {
+                        handlePreviewEnd();
+                      }, remainingTime);
                     }}
                     onTimeUpdate={(e) => {
-                      const dur = e.currentTarget.duration;
-                      const maxDur = dur && isFinite(dur) && dur > 0 && dur < 10 ? dur : 10;
-                      if (e.currentTarget.currentTime >= maxDur) {
+                      const cur = e.currentTarget.currentTime;
+                      const dur = previewDuration;
+                      if (dur > 0) {
+                        setPlaybackProgress(Math.min(100, (cur / dur) * 100));
+                      }
+                      if (cur >= dur) {
                         e.currentTarget.pause();
                         handlePreviewEnd();
                       }
@@ -255,6 +279,17 @@ function GalleryCard({
             )}
 
             {/* ========================================================= */}
+            {/* VIDEO BUFFERING / LOADING INDICATOR                       */}
+            {/* ========================================================= */}
+            {isVideo && isPreviewActive && (!isMediaReady || isBuffering) && (
+              <div className="absolute inset-0 z-[15] flex items-center justify-center pointer-events-none bg-black/40 backdrop-blur-[2px] transition-all animate-fadeIn">
+                <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-black/70 backdrop-blur-md text-white flex items-center justify-center shadow-2xl border border-white/20">
+                  <div className="w-5 h-5 md:w-6 md:h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                </div>
+              </div>
+            )}
+
+            {/* ========================================================= */}
             {/* DYNAMIC PROGRESS BAR INDICATOR (MAX 10S / DURASI ASLI)    */}
             {/* ========================================================= */}
             {isVideo && isPreviewActive && (
@@ -262,8 +297,12 @@ function GalleryCard({
                 <div
                   className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all ease-linear"
                   style={{
-                    width: isMediaReady ? '100%' : '0%',
-                    transitionDuration: isMediaReady ? `${Math.round(previewDuration * 1000)}ms` : '0ms',
+                    width: isYouTube
+                      ? isMediaReady
+                        ? '100%'
+                        : '0%'
+                      : `${playbackProgress}%`,
+                    transitionDuration: isYouTube && isMediaReady ? `${Math.round(previewDuration * 1000)}ms` : '100ms',
                   }}
                 />
               </div>

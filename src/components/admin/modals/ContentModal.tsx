@@ -581,7 +581,7 @@ export default function ContentModal({
                 ) : (
                   sortedCategories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.label}
+                      {c.label} {c.status === 'archived' ? '(Hidden)' : ''}
                     </option>
                   ))
                 )}
@@ -604,13 +604,35 @@ export default function ContentModal({
                 ) : (
                   availableSubcategories.map((sub) => (
                     <option key={sub.id} value={sub.id}>
-                      {sub.label}
+                      {sub.label} {sub.status === 'archived' ? '(Hidden)' : ''}
                     </option>
                   ))
                 )}
               </select>
             </div>
           </div>
+
+          {/* Warning if category or subcategory is hidden */}
+          {(() => {
+            const selectedCat = categoriesList.find((c) => c.id === contentFormData.categoryId);
+            const selectedSub = selectedCat?.subcategories.find(
+              (s) => s.id === contentFormData.subcategoryId
+            );
+            const isCatArchived = selectedCat?.status === 'archived';
+            const isSubArchived = selectedSub?.status === 'archived';
+
+            if (isCatArchived || isSubArchived) {
+              return (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span>
+                    Perhatian: {isCatArchived ? `Kategori "${selectedCat?.label}"` : `Subkategori "${selectedSub?.label}"`} sedang disembunyikan (hide). Karya ini akan ikut tersembunyi dari website utama.
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {/* Description */}
           <div>

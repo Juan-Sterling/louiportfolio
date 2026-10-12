@@ -1,12 +1,13 @@
 import { MainCategory, MediaItem } from '@/data/portfolioData';
 
-export type TabType = 'overview' | 'contents' | 'categories';
+export type TabType = 'overview' | 'contents' | 'categories' | 'layout';
 
 export interface AdminSubCategory {
   id: string;
   label: string;
   description?: string;
   order_index?: number;
+  status?: 'published' | 'archived' | 'draft';
 }
 
 export interface AdminCategory {
@@ -14,6 +15,7 @@ export interface AdminCategory {
   label: string;
   description?: string;
   order_index?: number;
+  status?: 'published' | 'archived' | 'draft';
   subcategories: AdminSubCategory[];
 }
 
@@ -39,6 +41,7 @@ export interface CategoryFormData {
   id: string;
   label: string;
   description: string;
+  status?: 'published' | 'archived';
 }
 
 export interface SubcategoryFormData {
@@ -46,6 +49,7 @@ export interface SubcategoryFormData {
   categoryId: string;
   label: string;
   description: string;
+  status?: 'published' | 'archived';
 }
 
 export interface ChangePasswordFormData {

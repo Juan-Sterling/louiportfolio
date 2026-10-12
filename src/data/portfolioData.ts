@@ -4,12 +4,14 @@ export interface SubCategoryDef {
   key: string;
   label: string;
   description: string;
+  status?: 'draft' | 'published' | 'archived';
 }
 
 export interface CategoryGroup {
   key: MainCategory;
   label: string;
   description: string;
+  status?: 'draft' | 'published' | 'archived';
   subcategories: SubCategoryDef[];
 }
 
@@ -28,6 +30,7 @@ export interface MediaItem {
   aspect?: string; // Optional legacy aspect ratio
   videoUrl?: string; // YouTube embed link for playable modal
   status?: 'draft' | 'published' | 'archived';
+  order_index?: number;
 }
 
 /**
