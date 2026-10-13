@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   LayoutDashboard,
@@ -37,8 +38,16 @@ export default function AdminSidebar({
         {/* Logo & Platform Name */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white text-black font-bold flex items-center justify-center font-heading text-lg">
-              L
+            <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0 shadow-sm">
+              <div className="relative w-full h-full">
+                <Image
+                  src="/images/loui-logo-new.png"
+                  alt="LOUI"
+                  fill
+                  sizes="36px"
+                  className="object-contain"
+                />
+              </div>
             </div>
             <div>
               <h1 className="font-heading font-black text-lg tracking-tight uppercase">

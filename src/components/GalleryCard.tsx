@@ -38,11 +38,14 @@ function GalleryCard({
   const [playbackProgress, setPlaybackProgress] = useState<number>(0);
   const [hasCompletedPreview, setHasCompletedPreview] = useState<boolean>(false);
   const [previewDuration, setPreviewDuration] = useState<number>(10);
+  const previewDurationRef = useRef<number>(10);
 
   // Timers refs
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   // Staggered entrance animation delay
   // Snappy delay so cards appear smoothly and stably together
@@ -80,6 +83,10 @@ function GalleryCard({
       clearTimeout(durationTimerRef.current);
       durationTimerRef.current = null;
     }
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     if (videoRef.current) {
       try {
         videoRef.current.pause();
@@ -87,6 +94,9 @@ function GalleryCard({
       } catch {
         // Ignore video pause errors
       }
+    }
+    if (progressBarRef.current) {
+      progressBarRef.current.style.transform = 'scaleX(0)';
     }
     setPlaybackProgress(0);
   }, []);
@@ -101,11 +111,38 @@ function GalleryCard({
     setPlaybackProgress(0);
   }, [clearTimers]);
 
+  // Butter-smooth 60fps/120fps progress tracking via requestAnimationFrame
+  const startProgressAnimation = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    const tick = () => {
+      if (videoRef.current && progressBarRef.current) {
+        const cur = videoRef.current.currentTime;
+        const dur = previewDurationRef.current || 10;
+        if (dur > 0) {
+          const ratio = Math.min(1, Math.max(0, cur / dur));
+          progressBarRef.current.style.transform = `scaleX(${ratio})`;
+        }
+        if (cur >= dur) {
+          handlePreviewEnd();
+          return;
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [handlePreviewEnd]);
+
   // Mouse enter: trigger debounced video preview
   const handleMouseEnter = () => {
     if (isVideo) {
       clearTimers();
       setHasCompletedPreview(false);
+      previewDurationRef.current = 10;
       setPreviewDuration(10);
       setPlaybackProgress(0);
 
@@ -126,6 +163,7 @@ function GalleryCard({
     setIsMediaReady(false);
     setIsBuffering(false);
     setHasCompletedPreview(false);
+    previewDurationRef.current = 10;
     setPreviewDuration(10);
     setPlaybackProgress(0);
   };
@@ -232,6 +270,7 @@ function GalleryCard({
                       const dur = e.currentTarget.duration;
                       if (dur && isFinite(dur) && dur > 0) {
                         const effective = dur < 10 ? dur : 10;
+                        previewDurationRef.current = effective;
                         setPreviewDuration(effective);
                       }
                     }}
@@ -241,12 +280,16 @@ function GalleryCard({
                         clearTimeout(durationTimerRef.current);
                         durationTimerRef.current = null;
                       }
+                      if (rafRef.current) {
+                        cancelAnimationFrame(rafRef.current);
+                        rafRef.current = null;
+                      }
                     }}
                     onPlaying={(e) => {
                       setIsMediaReady(true);
                       setIsBuffering(false);
                       const cur = e.currentTarget.currentTime;
-                      const dur = previewDuration;
+                      const dur = previewDurationRef.current;
                       const remainingTime = Math.max(0, dur - cur) * 1000;
                       if (durationTimerRef.current) {
                         clearTimeout(durationTimerRef.current);
@@ -254,13 +297,11 @@ function GalleryCard({
                       durationTimerRef.current = setTimeout(() => {
                         handlePreviewEnd();
                       }, remainingTime);
+                      startProgressAnimation();
                     }}
                     onTimeUpdate={(e) => {
                       const cur = e.currentTarget.currentTime;
-                      const dur = previewDuration;
-                      if (dur > 0) {
-                        setPlaybackProgress(Math.min(100, (cur / dur) * 100));
-                      }
+                      const dur = previewDurationRef.current;
                       if (cur >= dur) {
                         e.currentTarget.pause();
                         handlePreviewEnd();
@@ -289,17 +330,25 @@ function GalleryCard({
             {/* ========================================================= */}
             {isVideo && isPreviewActive && (
               <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/40 z-20 pointer-events-none overflow-hidden">
-                <div
-                  className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] transition-all ease-linear"
-                  style={{
-                    width: isYouTube
-                      ? isMediaReady
-                        ? '100%'
-                        : '0%'
-                      : `${playbackProgress}%`,
-                    transitionDuration: isYouTube && isMediaReady ? `${Math.round(previewDuration * 1000)}ms` : '100ms',
-                  }}
-                />
+                {isYouTube ? (
+                  <div
+                    className="h-full w-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] origin-left will-change-transform"
+                    style={{
+                      transform: isMediaReady ? 'scaleX(1)' : 'scaleX(0)',
+                      transition: isMediaReady
+                        ? `transform ${Math.round(previewDuration * 1000)}ms linear`
+                        : 'none',
+                    }}
+                  />
+                ) : (
+                  <div
+                    ref={progressBarRef}
+                    className="h-full w-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] origin-left will-change-transform"
+                    style={{
+                      transform: 'scaleX(0)',
+                    }}
+                  />
+                )}
               </div>
             )}
 

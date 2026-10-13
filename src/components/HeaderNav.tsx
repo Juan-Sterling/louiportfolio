@@ -70,7 +70,7 @@ export default function HeaderNav() {
           >
             <div className="w-7 h-7 relative">
               <Image
-                src="/images/loui-logo.png"
+                src="/images/loui-logo-new.png"
                 alt="LOUI"
                 fill
                 sizes="28px"

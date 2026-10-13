@@ -26,20 +26,20 @@ export const metadata: Metadata = {
     locale: "en_US",
     images: [
       {
-        url: "/images/loui-logo.png",
-        width: 716,
-        height: 293,
+        url: "/images/loui-logo-new.png",
+        width: 2400,
+        height: 1770,
         alt: "LOUI Portfolio Logo",
       },
     ],
   },
   icons: {
     icon: [
-      { url: "/favicon.ico" },
-      { url: "/icon.png", type: "image/png" },
+      { url: "/favicon.ico?v=2" },
+      { url: "/icon.png?v=2", type: "image/png" },
     ],
-    shortcut: "/favicon.ico",
-    apple: "/apple-icon.png",
+    shortcut: "/favicon.ico?v=2",
+    apple: "/apple-icon.png?v=2",
   },
 };
 

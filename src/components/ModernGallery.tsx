@@ -924,9 +924,16 @@ export default function ModernGallery({
                 {/* Spinning gradient arc */}
                 <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-neutral-900 border-r-neutral-900/40 animate-spin" />
                 {/* Brand Lettermark */}
-                <span className="font-heading font-black text-sm text-neutral-900 select-none">
-                  L
-                </span>
+                <div className="relative w-5 h-6 flex items-center justify-center">
+                  <Image
+                    src="/images/loading-l.png"
+                    alt="Loading"
+                    fill
+                    sizes="24px"
+                    className="object-contain select-none"
+                    priority
+                  />
+                </div>
               </div>
 
               {/* Subtle Bouncing Wave Dots */}

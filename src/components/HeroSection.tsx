@@ -12,20 +12,20 @@ export default function HeroSection() {
       {/* 3-Column Hero Layout matching Canva */}
       <div className="grid grid-cols-1 md:grid-cols-3 items-center justify-between gap-6 md:gap-4 w-full">
         {/* Left Column: Location */}
-        <div className="text-left text-xs sm:text-sm md:text-[15px] font-medium leading-relaxed tracking-tight text-neutral-900 font-sans order-2 md:order-1 animate-entrance-hero-left">
+        <div className="text-center md:text-left text-xs sm:text-sm md:text-[15px] font-medium leading-relaxed tracking-tight text-neutral-900 font-sans order-2 md:order-1 animate-entrance-hero-left">
           <p className="tracking-wide">BASED IN BANDUNG,</p>
           <p className="tracking-wide">WEST JAVA, INDONESIA</p>
         </div>
 
         {/* Center Column: Logo & Portfolio Title */}
         <div className="flex flex-col items-center justify-center text-center order-1 md:order-2 animate-entrance-hero-center">
-          <div className="relative w-[85px] sm:w-[105px] md:w-[120px] lg:w-[135px] aspect-[716/293] transition-transform duration-500 hover:scale-105">
+          <div className="relative w-[85px] sm:w-[100px] md:w-[115px] lg:w-[125px] aspect-[80/59] transition-transform duration-500 hover:scale-105">
             <Image
-              src="/images/loui-logo.png"
+              src="/images/loui-logo-new.png"
               alt="LOUI"
               fill
               priority
-              sizes="(max-width: 640px) 85px, (max-width: 1024px) 120px, 135px"
+              sizes="(max-width: 640px) 85px, (max-width: 1024px) 115px, 125px"
               className="object-contain"
             />
           </div>
@@ -36,7 +36,7 @@ export default function HeroSection() {
         </div>
 
         {/* Right Column: Copyright */}
-        <div className="text-left md:text-right text-xs sm:text-sm md:text-[15px] font-medium tracking-wide text-neutral-900 font-sans order-3 animate-entrance-hero-right">
+        <div className="text-center md:text-right text-xs sm:text-sm md:text-[15px] font-medium tracking-wide text-neutral-900 font-sans order-3 animate-entrance-hero-right">
           <p>© 2026 LOUI</p>
         </div>
       </div>

@@ -56,7 +56,7 @@ export default function GraphicDesignPage() {
         </Link>
 
         <div className="w-8 h-8 relative">
-          <Image src="/images/loui-logo.png" alt="LOUI" fill className="object-contain" />
+          <Image src="/images/loui-logo-new.png" alt="LOUI" fill className="object-contain" />
         </div>
       </header>
 

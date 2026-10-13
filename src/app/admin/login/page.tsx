@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -187,8 +188,16 @@ export default function AdminLoginPage() {
             <div className="animate-fadeIn">
               {/* Brand & Heading */}
               <div className="text-center mb-8">
-                <div className="w-14 h-14 rounded-2xl bg-white text-black font-heading font-black text-2xl flex items-center justify-center mx-auto mb-4 shadow-xl">
-                  L
+                <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center mx-auto mb-4 p-2.5 shadow-xl">
+                  <div className="relative w-full h-full">
+                    <Image
+                      src="/images/loui-logo-new.png"
+                      alt="LOUI"
+                      fill
+                      sizes="56px"
+                      className="object-contain"
+                    />
+                  </div>
                 </div>
                 <h1 className="font-heading font-black text-3xl uppercase tracking-tight text-white mb-2">
                   Admin Portal
