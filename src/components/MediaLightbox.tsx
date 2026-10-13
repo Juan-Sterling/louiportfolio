@@ -10,7 +10,6 @@ import {
   ZoomOut,
   RotateCcw,
   Play,
-  Pause,
   ExternalLink,
   LayoutGrid,
   Layers,
@@ -80,12 +79,11 @@ export default function MediaLightbox({
   // Overall overlay controls visibility (toggled on single click/tap on screen)
   const [showOverlayControls, setShowOverlayControls] = useState<boolean>(true);
 
-  // Video playback ref & state for mobile touch gestures and direct video
+  // Video playback ref & state for direct video
   const videoIframeRef = useRef<HTMLIFrameElement>(null);
   const directVideoRef = useRef<HTMLVideoElement>(null);
   const [isVideoPlaying, setIsVideoPlaying] = useState<boolean>(true);
   const isVideoPlayingRef = useRef<boolean>(true);
-  const [playPauseFeedback, setPlayPauseFeedback] = useState<'play' | 'pause' | null>(null);
 
   // Dynamic video dimensions & aspect ratio
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -214,61 +212,10 @@ export default function MediaLightbox({
     isDraggingRef.current = false;
   }, []);
 
-  // Toggle video playback via postMessage for YouTube or direct video element
-  const toggleVideoPlayback = useCallback(() => {
-    if (!activeMedia || !isCurrentVideo) return;
-
-    if (isYouTubeUrl(activeMedia.videoUrl)) {
-      const iframe = videoIframeRef.current;
-      if (!iframe || !iframe.contentWindow) return;
-
-      const nextState = !isVideoPlayingRef.current;
-      isVideoPlayingRef.current = nextState;
-      setIsVideoPlaying(nextState);
-
-      const command = nextState ? 'playVideo' : 'pauseVideo';
-      iframe.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: command, args: '' }),
-        '*'
-      );
-      if (nextState) {
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: 'unMute', args: '' }),
-          '*'
-        );
-      }
-
-      setPlayPauseFeedback(nextState ? 'play' : 'pause');
-      setTimeout(() => {
-        setPlayPauseFeedback(null);
-      }, 650);
-    } else {
-      const video = directVideoRef.current;
-      if (!video) return;
-
-      if (video.paused) {
-        video.play().catch(() => {});
-        isVideoPlayingRef.current = true;
-        setIsVideoPlaying(true);
-        setPlayPauseFeedback('play');
-      } else {
-        video.pause();
-        isVideoPlayingRef.current = false;
-        setIsVideoPlaying(false);
-        setPlayPauseFeedback('pause');
-      }
-
-      setTimeout(() => {
-        setPlayPauseFeedback(null);
-      }, 650);
-    }
-  }, [activeMedia, isCurrentVideo]);
-
   // Reset video play state on item, slide, or open change, and handle direct video autoplay
   useEffect(() => {
     setIsVideoPlaying(true);
     isVideoPlayingRef.current = true;
-    setPlayPauseFeedback(null);
 
     if (!isOpen || !activeMedia || !isCurrentVideo) return;
     const timer = setTimeout(() => {
@@ -290,37 +237,106 @@ export default function MediaLightbox({
     return () => clearTimeout(timer);
   }, [currentIndex, currentSlideIndex, isOpen, activeMedia, isCurrentVideo]);
 
-  // Reset overlay controls and timer when lightbox closes
+  // Auto-hide inactivity timer settings (3.5s delay)
+  const INACTIVITY_TIMEOUT_MS = 3500;
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isHoveringControlsRef = useRef<boolean>(false);
+  const showOverlayControlsRef = useRef<boolean>(true);
+  const lastActivityTimeRef = useRef<number>(0);
+  const lastTouchTimestampRef = useRef<number>(0);
+  const isInteractingTouchRef = useRef<boolean>(false);
+
+  // Synchronize showOverlayControls state to ref
   useEffect(() => {
-    if (!isOpen) {
+    showOverlayControlsRef.current = showOverlayControls;
+  }, [showOverlayControls]);
+
+  // Clear the auto-hide timer
+  const clearInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+  }, []);
+
+  // Start the countdown to auto-hide filmstrip and navigation arrows
+  const startInactivityTimer = useCallback(
+    (delay = INACTIVITY_TIMEOUT_MS) => {
+      clearInactivityTimer();
+      if (!isOpen) return;
+      // Do not hide while hovering over filmstrip, arrows, or top toolbar
+      if (isHoveringControlsRef.current) return;
+      // Do not hide while zoomed in, dragging, or touching
+      if (scaleRef.current > 1 || isDraggingRef.current || isInteractingTouchRef.current) return;
+
+      inactivityTimerRef.current = setTimeout(() => {
+        if (
+          !isHoveringControlsRef.current &&
+          !isDraggingRef.current &&
+          !isInteractingTouchRef.current &&
+          scaleRef.current <= 1
+        ) {
+          setShowOverlayControls(false);
+        }
+      }, delay);
+    },
+    [isOpen, clearInactivityTimer]
+  );
+
+  // Reveal controls and restart the inactivity timer
+  const showControlsAndResetTimer = useCallback(() => {
+    setShowOverlayControls(true);
+    startInactivityTimer();
+  }, [startInactivityTimer]);
+
+  // Persistent controls when user hovers over filmstrip or buttons
+  const handleControlsMouseEnter = useCallback(() => {
+    isHoveringControlsRef.current = true;
+    clearInactivityTimer();
+  }, [clearInactivityTimer]);
+
+  const handleControlsMouseLeave = useCallback(() => {
+    isHoveringControlsRef.current = false;
+    startInactivityTimer();
+  }, [startInactivityTimer]);
+
+  // Reset overlay controls and timer when lightbox opens, closes, or changes item/slide
+  useEffect(() => {
+    if (isOpen) {
       setShowOverlayControls(true);
+      startInactivityTimer();
+    } else {
+      setShowOverlayControls(true);
+      clearInactivityTimer();
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
         clickTimeoutRef.current = null;
       }
     }
-  }, [isOpen]);
+  }, [isOpen, currentIndex, currentSlideIndex, startInactivityTimer, clearInactivityTimer]);
 
   // Navigation handlers with instant response and zoom reset
   const handlePrev = useCallback(() => {
     resetZoom();
+    showControlsAndResetTimer();
     if (currentSlideIndex > 0) {
       setCurrentSlideIndex((prev) => prev - 1);
     } else {
       const newIdx = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
       onNavigate(newIdx);
     }
-  }, [currentSlideIndex, currentIndex, items.length, onNavigate, resetZoom]);
+  }, [currentSlideIndex, currentIndex, items.length, onNavigate, resetZoom, showControlsAndResetTimer]);
 
   const handleNext = useCallback(() => {
     resetZoom();
+    showControlsAndResetTimer();
     if (currentSlideIndex < effectiveSlides.length - 1) {
       setCurrentSlideIndex((prev) => prev + 1);
     } else {
       const newIdx = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
       onNavigate(newIdx);
     }
-  }, [currentSlideIndex, effectiveSlides.length, currentIndex, items.length, onNavigate, resetZoom]);
+  }, [currentSlideIndex, effectiveSlides.length, currentIndex, items.length, onNavigate, resetZoom, showControlsAndResetTimer]);
 
   // Reset zoom on item, slide, or open status change
   useEffect(() => {
@@ -513,8 +529,16 @@ export default function MediaLightbox({
       return;
     }
     lastToggleTimestampRef.current = now;
-    setShowOverlayControls((prev) => !prev);
-  }, []);
+    setShowOverlayControls((prev) => {
+      const next = !prev;
+      if (next) {
+        startInactivityTimer();
+      } else {
+        clearInactivityTimer();
+      }
+      return next;
+    });
+  }, [startInactivityTimer, clearInactivityTimer]);
 
   // Single-click / tap on media to toggle filmstrip & navigation arrows
   const handleMediaClick = (e: React.MouseEvent) => {
@@ -728,6 +752,9 @@ export default function MediaLightbox({
   // Touch handlers for mobile (Single-finger pan when zoomed, Pinch-to-zoom, Swipe when 1x, Single-tap toggle)
   const handleTouchStart = (e: React.TouchEvent) => {
     e.stopPropagation();
+    lastTouchTimestampRef.current = Date.now();
+    isInteractingTouchRef.current = true;
+    clearInactivityTimer();
 
     if (e.touches.length === 1) {
       touchStartPos.current = {
@@ -758,6 +785,7 @@ export default function MediaLightbox({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    lastTouchTimestampRef.current = Date.now();
     if (isCurrentVideo) return;
 
     // Pinch-to-zoom handling
@@ -808,17 +836,21 @@ export default function MediaLightbox({
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     e.stopPropagation();
+    lastTouchTimestampRef.current = Date.now();
+    isInteractingTouchRef.current = false;
 
     if (pinchStartDistRef.current) {
       pinchStartDistRef.current = null;
       setIsDragging(false);
       isDraggingRef.current = false;
+      startInactivityTimer();
       return;
     }
 
     if (scale > 1) {
       setIsDragging(false);
       isDraggingRef.current = false;
+      startInactivityTimer();
       return;
     }
 
@@ -842,6 +874,7 @@ export default function MediaLightbox({
           handlePrev();
         }
         lastTouchToggleTimeRef.current = Date.now();
+        showControlsAndResetTimer();
       } else if (
         Math.abs(deltaX) < 25 &&
         Math.abs(deltaY) < 25 &&
@@ -850,7 +883,11 @@ export default function MediaLightbox({
         // Single tap on mobile screen (Photo and Video)
         lastTouchToggleTimeRef.current = Date.now();
         toggleOverlayControls();
+      } else {
+        startInactivityTimer();
       }
+    } else {
+      startInactivityTimer();
     }
   };
 
@@ -866,11 +903,58 @@ export default function MediaLightbox({
     };
   }, [isOpen]);
 
+  // Global user activity detection (mouse movement and wheel on desktop)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleWindowMouseMove = () => {
+      // Ignore synthetic mousemove caused by mobile touches
+      if (Date.now() - lastTouchTimestampRef.current < 800) {
+        return;
+      }
+
+      const now = Date.now();
+      // If controls were auto-hidden, wake them up immediately on mouse movement
+      if (!showOverlayControlsRef.current) {
+        setShowOverlayControls(true);
+        lastActivityTimeRef.current = now;
+        startInactivityTimer();
+        return;
+      }
+
+      // If already visible, throttle timer restart to every 200ms
+      if (now - lastActivityTimeRef.current > 200) {
+        lastActivityTimeRef.current = now;
+        startInactivityTimer();
+      }
+    };
+
+    const handleWindowWheel = () => {
+      const now = Date.now();
+      if (!showOverlayControlsRef.current) {
+        setShowOverlayControls(true);
+      }
+      if (now - lastActivityTimeRef.current > 200) {
+        lastActivityTimeRef.current = now;
+        startInactivityTimer();
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove, { passive: true });
+    window.addEventListener('wheel', handleWindowWheel, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('wheel', handleWindowWheel);
+    };
+  }, [isOpen, startInactivityTimer]);
+
   // Keyboard navigation and shortcuts
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      showControlsAndResetTimer();
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft') handlePrev();
       if (e.key === 'ArrowRight') handleNext();
@@ -884,7 +968,7 @@ export default function MediaLightbox({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, handlePrev, handleNext, handleZoomIn, handleZoomOut, resetZoom, onClose]);
+  }, [isOpen, handlePrev, handleNext, handleZoomIn, handleZoomOut, resetZoom, onClose, showControlsAndResetTimer]);
 
   // Keep stable ref for onClose callback
   const onCloseRef = useRef(onClose);
@@ -950,6 +1034,8 @@ export default function MediaLightbox({
           e.stopPropagation();
           backdropMouseDownRef.current = false;
         }}
+        onMouseEnter={handleControlsMouseEnter}
+        onMouseLeave={handleControlsMouseLeave}
       >
         {/* Left: Category Badge, Counter & Slide Indicator */}
         <div className="flex flex-col gap-1 min-w-0 pr-2">
@@ -984,7 +1070,7 @@ export default function MediaLightbox({
             <button
               onClick={() => {
                 setShowThumbnails((prev) => !prev);
-                setShowOverlayControls(true);
+                showControlsAndResetTimer();
               }}
               className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center border transition-all ${
                 showThumbnails && showOverlayControls
@@ -1068,6 +1154,8 @@ export default function MediaLightbox({
             e.stopPropagation();
             handlePrev();
           }}
+          onMouseEnter={handleControlsMouseEnter}
+          onMouseLeave={handleControlsMouseLeave}
           className={`absolute left-1.5 sm:left-3 md:left-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
             showOverlayControls
               ? 'opacity-100 translate-x-0 pointer-events-auto'
@@ -1087,6 +1175,8 @@ export default function MediaLightbox({
             e.stopPropagation();
             handleNext();
           }}
+          onMouseEnter={handleControlsMouseEnter}
+          onMouseLeave={handleControlsMouseLeave}
           className={`absolute right-1.5 sm:right-3 md:right-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
             showOverlayControls
               ? 'opacity-100 translate-x-0 pointer-events-auto'
@@ -1126,70 +1216,17 @@ export default function MediaLightbox({
             className="relative w-full max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center mx-auto transition-all duration-300"
           >
             {activeMedia?.videoUrl && isYouTubeUrl(activeMedia.videoUrl) ? (
-              <>
-                <iframe
-                  ref={videoIframeRef}
-                  src={
-                    getYouTubeEmbedUrl(activeMedia.videoUrl) ||
-                    'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
-                  }
-                  title={activeMedia.caption || currentItem.subcategoryLabel || 'YouTube Video Player'}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Gesture & Click Overlay for Video: enables horizontal swipe & single-click toggle on mobile and desktop */}
-                <div
-                  className="absolute inset-0 z-20 flex items-center justify-center cursor-pointer select-none touch-pan-y"
-                  onClick={handleMediaClick}
-                  onTouchStart={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
-                >
-                  {/* Play / Pause instant feedback animation */}
-                  {playPauseFeedback && (
-                    <div className="w-16 h-16 rounded-full bg-black/75 backdrop-blur-md text-white flex items-center justify-center pointer-events-none animate-fadeIn shadow-2xl border border-white/20">
-                      {playPauseFeedback === 'play' ? (
-                        <Play className="w-7 h-7 fill-current translate-x-0.5" />
-                      ) : (
-                        <Pause className="w-7 h-7 fill-current" />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Show persistent play badge if video is paused */}
-                  {!isVideoPlaying && !playPauseFeedback && (
-                    <div className="w-16 h-16 rounded-full bg-black/65 backdrop-blur-md text-white flex items-center justify-center pointer-events-none shadow-2xl border border-white/20">
-                      <Play className="w-7 h-7 fill-current translate-x-0.5" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Dedicated Play/Pause Controller in bottom-left corner for YouTube */}
-                {showOverlayControls && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleVideoPlayback();
-                    }}
-                    className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 hover:bg-black/90 text-white text-xs font-medium border border-white/20 backdrop-blur-md shadow-lg transition-all active:scale-95"
-                    title={isVideoPlaying ? 'Pause Video' : 'Play Video'}
-                  >
-                    {isVideoPlaying ? (
-                      <>
-                        <Pause className="w-3.5 h-3.5 fill-current" />
-                        <span className="text-[11px] font-sans">Pause</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span className="text-[11px] font-sans">Play</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </>
+              <iframe
+                ref={videoIframeRef}
+                src={
+                  getYouTubeEmbedUrl(activeMedia.videoUrl) ||
+                  'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
+                }
+                title={activeMedia.caption || currentItem.subcategoryLabel || 'YouTube Video Player'}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="w-full h-full object-cover"
+              />
             ) : (
               /* Direct Video Player */
               <div
@@ -1309,14 +1346,20 @@ export default function MediaLightbox({
       </div>
 
       {/* Multi-Slide Carousel Controls & Dots */}
-      {effectiveSlides.length > 1 && showOverlayControls && (
+      {effectiveSlides.length > 1 && (
         <div
           className={`absolute left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-xl border border-white/20 shadow-2xl transition-all duration-300 ${
             showThumbnails && items.length > 1
               ? 'bottom-20 sm:bottom-24'
               : 'bottom-4 sm:bottom-6'
+          } ${
+            showOverlayControls
+              ? 'opacity-100 translate-y-0 pointer-events-auto'
+              : 'opacity-0 translate-y-4 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()}
+          onMouseEnter={handleControlsMouseEnter}
+          onMouseLeave={handleControlsMouseLeave}
         >
           <button
             type="button"
@@ -1385,6 +1428,8 @@ export default function MediaLightbox({
               : 'opacity-0 translate-y-8 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()}
+          onMouseEnter={handleControlsMouseEnter}
+          onMouseLeave={handleControlsMouseLeave}
         >
           <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-2xl bg-black/75 backdrop-blur-xl border border-white/15 max-w-[96vw] sm:max-w-2xl md:max-w-3xl shadow-2xl">
             {/* Filmstrip Mini Left Chevron */}
@@ -1428,6 +1473,7 @@ export default function MediaLightbox({
                       if (idx !== currentIndex) {
                         resetZoom();
                         onNavigate(idx);
+                        showControlsAndResetTimer();
                       }
                     }}
                     className={`relative w-10 h-10 sm:w-12 sm:h-12 md:w-13 md:h-13 rounded-xl overflow-hidden shrink-0 transition-all duration-200 group ${
