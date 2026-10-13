@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
+import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 
 interface AdminMediaThumbnailProps {
   src: string;
@@ -22,11 +23,13 @@ export default function AdminMediaThumbnail({
   alt,
   className,
 }: AdminMediaThumbnailProps) {
-  const [currentSrc, setCurrentSrc] = useState(src);
+  const [currentSrc, setCurrentSrc] = useState(() =>
+    getOptimizedCloudinaryUrl(src, { width: 160 })
+  );
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
-    setCurrentSrc(src);
+    setCurrentSrc(getOptimizedCloudinaryUrl(src, { width: 160 }));
     setHasError(false);
   }, [src]);
 

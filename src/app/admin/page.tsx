@@ -14,6 +14,7 @@ import {
   uploadToCloudinary,
   deleteCloudinaryMedia,
   extractCloudinaryPublicId,
+  getOptimizedCloudinaryUrl,
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/cloudinary';
 import {
@@ -290,12 +291,17 @@ export default function AdminPage() {
           subcategoryLabel: d.subcategories?.label || 'Work',
           description: d.description || '',
           type: (d.type || 'photo') as 'photo' | 'video',
-          image: d.image_url,
+          image: getOptimizedCloudinaryUrl(d.image_url),
           videoUrl: d.video_url || undefined,
           status: (d.status || 'published') as 'draft' | 'published' | 'archived',
           order_index: d.order_index ?? 0,
           created_at: d.created_at,
-          slides: Array.isArray(d.slides) ? d.slides : undefined,
+          slides: Array.isArray(d.slides)
+            ? d.slides.map((s: any) => ({
+                ...s,
+                image: getOptimizedCloudinaryUrl(s.image),
+              }))
+            : undefined,
         }));
       }
 
@@ -1035,14 +1041,23 @@ export default function AdminPage() {
         }
       }
 
+      const optimizedFinalImage = finalImage ? getOptimizedCloudinaryUrl(finalImage) : finalImage;
+      const optimizedSlides =
+        contentFormData.slides && contentFormData.slides.length > 0
+          ? contentFormData.slides.map((s) => ({
+              ...s,
+              image: s.image ? getOptimizedCloudinaryUrl(s.image) : s.image,
+            }))
+          : [];
+
       const payload = {
         description: contentFormData.description.trim() || null,
         subcategory_id: finalSubcatId,
-        image_url: finalImage,
+        image_url: optimizedFinalImage,
         type: contentFormData.type,
         video_url: finalVideoUrl,
         status: contentFormData.status,
-        slides: contentFormData.slides && contentFormData.slides.length > 0 ? contentFormData.slides : [],
+        slides: optimizedSlides,
       };
 
       // Pre-commit Verification (Solusi B): Verify physical existence of R2 media files before writing to Supabase

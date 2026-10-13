@@ -563,12 +563,17 @@ export default function ModernGallery({
               subcategoryLabel: d.subcategories?.label || 'Portfolio',
               description: d.description || '',
               type: (d.type || 'photo') as 'photo' | 'video',
-              image: d.image_url,
+              image: getOptimizedCloudinaryUrl(d.image_url),
               videoUrl: d.video_url || undefined,
               aspect: undefined,
               order_index: d.order_index ?? 0,
               created_at: d.created_at,
-              slides: Array.isArray(d.slides) ? d.slides : undefined,
+              slides: Array.isArray(d.slides)
+                ? d.slides.map((s: any) => ({
+                    ...s,
+                    image: getOptimizedCloudinaryUrl(s.image),
+                  }))
+                : undefined,
             }));
           setItems(mappedItems);
         }

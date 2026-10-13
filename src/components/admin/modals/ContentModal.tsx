@@ -26,7 +26,7 @@ import {
   MAX_VIDEO_SIZE_BYTES,
   MAX_VIDEO_SIZE_MB,
 } from '@/lib/r2';
-import { uploadToCloudinary } from '@/lib/cloudinary';
+import { uploadToCloudinary, getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
 
 interface ContentModalProps {
   isOpen: boolean;
@@ -662,7 +662,7 @@ export default function ContentModal({
                   <div className="w-full min-h-[160px] max-h-[360px] flex items-center justify-center p-3 rounded-xl bg-black/60 border border-white/10 overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={contentFormData.image}
+                      src={getOptimizedCloudinaryUrl(contentFormData.image, { width: 800 })}
                       alt="Preview"
                       className="max-h-[330px] max-w-full w-auto h-auto object-contain rounded-lg shadow-xl block"
                     />
@@ -1060,7 +1060,7 @@ export default function ContentModal({
                       {coverThumb ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
-                          src={resolveVideoPlayUrl(coverThumb)}
+                          src={getOptimizedCloudinaryUrl(resolveVideoPlayUrl(coverThumb), { width: 160 })}
                           alt="Cover Slide"
                           className="w-full h-full object-cover"
                         />
@@ -1111,7 +1111,7 @@ export default function ContentModal({
                     <div className="w-14 h-11 rounded-lg overflow-hidden bg-neutral-900 border border-white/10 shrink-0 relative flex items-center justify-center">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={resolveVideoPlayUrl(slide.image)}
+                        src={getOptimizedCloudinaryUrl(resolveVideoPlayUrl(slide.image), { width: 160 })}
                         alt={`Slide ${idx + 2}`}
                         className="w-full h-full object-cover"
                       />

@@ -1236,7 +1236,11 @@ export default function MediaLightbox({
                 <video
                   ref={directVideoRef}
                   src={resolveVideoPlayUrl(activeMedia?.videoUrl || '')}
-                  poster={activeMedia?.image || undefined}
+                  poster={
+                    activeMedia?.image
+                      ? getLightboxOptimizedUrl(activeMedia.image, 1200)
+                      : undefined
+                  }
                   controls
                   controlsList="nodownload noplaybackrate"
                   disablePictureInPicture

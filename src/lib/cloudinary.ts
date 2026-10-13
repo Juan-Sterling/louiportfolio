@@ -59,8 +59,9 @@ export async function uploadToCloudinary(file: File): Promise<{
   }
 
   const data = await res.json();
+  const rawUrl = data.secure_url || data.url;
   return {
-    url: data.secure_url || data.url,
+    url: getOptimizedCloudinaryUrl(rawUrl),
     publicId: data.public_id,
     format: data.format,
     resourceType: data.resource_type,
@@ -188,13 +189,22 @@ export function getOptimizedCloudinaryUrl(
 
     const transformStr = transforms.join(',');
 
-    // Check if rest already starts with transformations
+    // Check if rest already starts with transformations (e.g. f_auto,q_auto or w_1200)
     const segments = rest.split('/');
-    if (
+    const firstSegment = segments[0] || '';
+    const isTransformSegment =
       segments.length > 0 &&
-      !/^v\d+$/.test(segments[0]) &&
-      (segments[0].includes('_') || segments[0].includes(','))
-    ) {
+      !/^v\d+$/.test(firstSegment) &&
+      firstSegment
+        .split(',')
+        .some(
+          (param) =>
+            /^(?:f|q|w|h|c|ar|b|e|dpr|g|o|r|co|fl|t)_/.test(param) ||
+            param === 'f_auto' ||
+            param === 'q_auto'
+        );
+
+    if (isTransformSegment) {
       // Replace existing transformation segment
       segments[0] = transformStr;
       return `${prefix}${segments.join('/')}`;
