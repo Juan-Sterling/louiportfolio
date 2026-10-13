@@ -240,7 +240,6 @@ export default function MediaLightbox({
   // Auto-hide inactivity timer settings (3.5s delay)
   const INACTIVITY_TIMEOUT_MS = 3500;
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isHoveringControlsRef = useRef<boolean>(false);
   const showOverlayControlsRef = useRef<boolean>(true);
   const lastActivityTimeRef = useRef<number>(0);
   const lastTouchTimestampRef = useRef<number>(0);
@@ -264,14 +263,11 @@ export default function MediaLightbox({
     (delay = INACTIVITY_TIMEOUT_MS) => {
       clearInactivityTimer();
       if (!isOpen) return;
-      // Do not hide while hovering over filmstrip, arrows, or top toolbar
-      if (isHoveringControlsRef.current) return;
-      // Do not hide while zoomed in, dragging, or touching
+      // Do not hide while actively zoomed in, dragging, or touching
       if (scaleRef.current > 1 || isDraggingRef.current || isInteractingTouchRef.current) return;
 
       inactivityTimerRef.current = setTimeout(() => {
         if (
-          !isHoveringControlsRef.current &&
           !isDraggingRef.current &&
           !isInteractingTouchRef.current &&
           scaleRef.current <= 1
@@ -286,17 +282,6 @@ export default function MediaLightbox({
   // Reveal controls and restart the inactivity timer
   const showControlsAndResetTimer = useCallback(() => {
     setShowOverlayControls(true);
-    startInactivityTimer();
-  }, [startInactivityTimer]);
-
-  // Persistent controls when user hovers over filmstrip or buttons
-  const handleControlsMouseEnter = useCallback(() => {
-    isHoveringControlsRef.current = true;
-    clearInactivityTimer();
-  }, [clearInactivityTimer]);
-
-  const handleControlsMouseLeave = useCallback(() => {
-    isHoveringControlsRef.current = false;
     startInactivityTimer();
   }, [startInactivityTimer]);
 
@@ -891,6 +876,14 @@ export default function MediaLightbox({
     }
   };
 
+  const handleTouchCancel = useCallback(() => {
+    lastTouchTimestampRef.current = Date.now();
+    isInteractingTouchRef.current = false;
+    setIsDragging(false);
+    isDraggingRef.current = false;
+    startInactivityTimer();
+  }, [startInactivityTimer]);
+
   // Body scroll lock (only toggles once when modal opens/closes)
   useEffect(() => {
     if (!isOpen) return;
@@ -1034,8 +1027,6 @@ export default function MediaLightbox({
           e.stopPropagation();
           backdropMouseDownRef.current = false;
         }}
-        onMouseEnter={handleControlsMouseEnter}
-        onMouseLeave={handleControlsMouseLeave}
       >
         {/* Left: Category Badge, Counter & Slide Indicator */}
         <div className="flex flex-col gap-1 min-w-0 pr-2">
@@ -1154,8 +1145,6 @@ export default function MediaLightbox({
             e.stopPropagation();
             handlePrev();
           }}
-          onMouseEnter={handleControlsMouseEnter}
-          onMouseLeave={handleControlsMouseLeave}
           className={`absolute left-1.5 sm:left-3 md:left-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
             showOverlayControls
               ? 'opacity-100 translate-x-0 pointer-events-auto'
@@ -1175,8 +1164,6 @@ export default function MediaLightbox({
             e.stopPropagation();
             handleNext();
           }}
-          onMouseEnter={handleControlsMouseEnter}
-          onMouseLeave={handleControlsMouseLeave}
           className={`absolute right-1.5 sm:right-3 md:right-6 z-40 w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full bg-black/60 hover:bg-white text-white hover:text-black flex items-center justify-center transition-all duration-300 border border-white/15 backdrop-blur-md hover:scale-105 active:scale-90 active:bg-white active:text-black shadow-lg ${
             showOverlayControls
               ? 'opacity-100 translate-x-0 pointer-events-auto'
@@ -1204,6 +1191,7 @@ export default function MediaLightbox({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
       >
         {isCurrentVideo ? (
           /* Video Modal Player (YouTube or Direct Cloudflare R2 / MP4) */
@@ -1362,8 +1350,6 @@ export default function MediaLightbox({
               : 'opacity-0 translate-y-4 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()}
-          onMouseEnter={handleControlsMouseEnter}
-          onMouseLeave={handleControlsMouseLeave}
         >
           <button
             type="button"
@@ -1432,8 +1418,6 @@ export default function MediaLightbox({
               : 'opacity-0 translate-y-8 pointer-events-none'
           }`}
           onClick={(e) => e.stopPropagation()}
-          onMouseEnter={handleControlsMouseEnter}
-          onMouseLeave={handleControlsMouseLeave}
         >
           <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-2xl bg-black/75 backdrop-blur-xl border border-white/15 max-w-[96vw] sm:max-w-2xl md:max-w-3xl shadow-2xl">
             {/* Filmstrip Mini Left Chevron */}
