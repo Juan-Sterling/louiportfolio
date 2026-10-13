@@ -305,15 +305,59 @@ export function distributeGalleryColumns(
     columns[c] = [...lockedHead, ...finalList];
   }
 
-  // flatItems: all slotted items first in slot order, then unslotted items
-  const mobileFlat: MediaItem[] = [
-    ...slottedItems,
-    ...regularItems.filter((it) => !slottedItems.some((s) => s.id === it.id)),
-  ];
+  // Construct gallery-ordered sequential list following the visual layout row-by-row
+  const galleryOrderedItems: MediaItem[] = [];
+  const seenIds = new Set<string>();
+
+  const maxLen = Math.max(
+    (columns[0]?.length || 0) + (hasDescription ? 1 : 0),
+    columns[1]?.length || 0,
+    columns[2]?.length || 0
+  );
+
+  for (let r = 0; r < maxLen; r++) {
+    const c0Item = hasDescription ? (r > 0 ? columns[0]?.[r - 1] : null) : columns[0]?.[r];
+    const c1Item = columns[1]?.[r];
+    const c2Item = columns[2]?.[r];
+
+    if (hasDescription && r === 0) {
+      if (c1Item && !seenIds.has(c1Item.id)) {
+        seenIds.add(c1Item.id);
+        galleryOrderedItems.push(c1Item);
+      }
+      if (c2Item && !seenIds.has(c2Item.id)) {
+        seenIds.add(c2Item.id);
+        galleryOrderedItems.push(c2Item);
+      }
+    } else {
+      if (c0Item && !seenIds.has(c0Item.id)) {
+        seenIds.add(c0Item.id);
+        galleryOrderedItems.push(c0Item);
+      }
+      if (c1Item && !seenIds.has(c1Item.id)) {
+        seenIds.add(c1Item.id);
+        galleryOrderedItems.push(c1Item);
+      }
+      if (c2Item && !seenIds.has(c2Item.id)) {
+        seenIds.add(c2Item.id);
+        galleryOrderedItems.push(c2Item);
+      }
+    }
+  }
+
+  // Safety fallback: append any uncaptured items
+  for (const col of columns) {
+    for (const item of col) {
+      if (item && !seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        galleryOrderedItems.push(item);
+      }
+    }
+  }
 
   return {
     columns,
-    flatItems: mobileFlat,
+    flatItems: galleryOrderedItems,
   };
 }
 
@@ -1048,7 +1092,7 @@ export default function ModernGallery({
                     )}
 
                     {desktopColumns[0].map((item, idx) => {
-                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      const fullIndex = flatItems.findIndex((fi) => fi.id === item.id);
                       return (
                         <GalleryCard
                           key={item.id}
@@ -1067,7 +1111,7 @@ export default function ModernGallery({
                   {/* Column 2 (Center): Slot 1, 4, 7... at head, then unslotted */}
                   <div className="flex flex-col">
                     {desktopColumns[1].map((item, idx) => {
-                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      const fullIndex = flatItems.findIndex((fi) => fi.id === item.id);
                       return (
                         <GalleryCard
                           key={item.id}
@@ -1086,7 +1130,7 @@ export default function ModernGallery({
                   {/* Column 3 (Right): Slot 2, 5, 8... at head, then unslotted */}
                   <div className="flex flex-col">
                     {desktopColumns[2].map((item, idx) => {
-                      const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                      const fullIndex = flatItems.findIndex((fi) => fi.id === item.id);
                       return (
                         <GalleryCard
                           key={item.id}
@@ -1134,7 +1178,7 @@ export default function ModernGallery({
                   )}
 
                   {flatItems.map((item, idx) => {
-                    const fullIndex = filteredItems.findIndex((fi) => fi.id === item.id);
+                    const fullIndex = idx;
                     return (
                       <GalleryCard
                         key={`mob-${item.id}`}
@@ -1229,7 +1273,7 @@ export default function ModernGallery({
 
       {/* Lightbox Modal Provider */}
       <MediaLightbox
-        items={filteredItems}
+        items={flatItems}
         currentIndex={activeMediaIndex}
         isOpen={lightboxOpen}
         onClose={closeLightbox}

@@ -61,11 +61,18 @@ export default function MediaLightbox({
   const activeMedia = effectiveSlides[currentSlideIndex] || effectiveSlides[0] || null;
   const isCurrentVideo = Boolean(activeMedia && activeMedia.type === 'video' && activeMedia.videoUrl);
 
-  // Stable loaded image buffer: Holds the previously loaded image so transitions never flash black
-  const [activeLoadedSrc, setActiveLoadedSrc] = useState<string>(
-    activeMedia && !isCurrentVideo ? activeMedia.image : ''
-  );
-  const prevItemRef = useRef<MediaSlide | null>(activeMedia);
+  // Instant high-res image loaded tracking per slide
+  const [isHighResLoaded, setIsHighResLoaded] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsHighResLoaded(false);
+  }, [activeMedia?.image, currentIndex, currentSlideIndex]);
+
+  // Helper for optimized Cloudinary delivery URLs
+  const getLightboxOptimizedUrl = useCallback((url?: string, width = 1920) => {
+    if (!url) return '';
+    return getOptimizedCloudinaryUrl(resolveVideoPlayUrl(url), { width });
+  }, []);
 
   // Bottom thumbnail strip visibility toggle
   const [showThumbnails, setShowThumbnails] = useState<boolean>(true);
@@ -283,21 +290,16 @@ export default function MediaLightbox({
     return () => clearTimeout(timer);
   }, [currentIndex, currentSlideIndex, isOpen, activeMedia, isCurrentVideo]);
 
-  // Sync active loaded image buffer when lightbox opens or activeMedia changes
+  // Reset overlay controls and timer when lightbox closes
   useEffect(() => {
     if (!isOpen) {
-      setActiveLoadedSrc('');
-      prevItemRef.current = null;
       setShowOverlayControls(true);
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
         clickTimeoutRef.current = null;
       }
-    } else if (activeMedia && !isCurrentVideo && !activeLoadedSrc) {
-      setActiveLoadedSrc(activeMedia.image);
-      prevItemRef.current = activeMedia;
     }
-  }, [isOpen, activeMedia, isCurrentVideo, activeLoadedSrc]);
+  }, [isOpen]);
 
   // Navigation handlers with instant response and zoom reset
   const handlePrev = useCallback(() => {
@@ -325,7 +327,7 @@ export default function MediaLightbox({
     resetZoom();
   }, [currentIndex, currentSlideIndex, isOpen, resetZoom]);
 
-  // Proactive preloading of adjacent images (Next 4, Prev 2)
+  // Proactive preloading of adjacent images using EXACT matching optimized 1920px URLs
   useEffect(() => {
     if (!isOpen || !items || items.length === 0) return;
 
@@ -334,12 +336,8 @@ export default function MediaLightbox({
       (currentIndex + 2) % items.length,
       (currentIndex + 3) % items.length,
       (currentIndex + 4) % items.length,
-      (currentIndex + 5) % items.length,
-      (currentIndex + 6) % items.length,
       (currentIndex - 1 + items.length) % items.length,
       (currentIndex - 2 + items.length) % items.length,
-      (currentIndex - 3 + items.length) % items.length,
-      (currentIndex - 4 + items.length) % items.length,
     ];
 
     indicesToPreload.forEach((idx) => {
@@ -351,14 +349,29 @@ export default function MediaLightbox({
           : it.image;
 
       if (targetUrl) {
+        const fullOptimizedUrl = getLightboxOptimizedUrl(targetUrl, 1920);
         const img = new window.Image();
-        img.src = targetUrl;
+        img.src = fullOptimizedUrl;
         if ('decode' in img) {
           img.decode().catch(() => {});
         }
       }
     });
-  }, [currentIndex, isOpen, items]);
+
+    // Also preload current item's extra slides if multi-slide
+    if (effectiveSlides.length > 1) {
+      effectiveSlides.forEach((slide) => {
+        if (slide.image && slide.image !== activeMedia?.image) {
+          const slideUrl = getLightboxOptimizedUrl(slide.image, 1920);
+          const img = new window.Image();
+          img.src = slideUrl;
+          if ('decode' in img) {
+            img.decode().catch(() => {});
+          }
+        }
+      });
+    }
+  }, [currentIndex, isOpen, items, effectiveSlides, activeMedia, getLightboxOptimizedUrl]);
 
   // Auto-scroll active thumbnail into center of bottom filmstrip
   useEffect(() => {
@@ -1086,12 +1099,12 @@ export default function MediaLightbox({
         </button>
       )}
 
-      {/* Central Media Stage */}
+      {/* Central Media Stage: Lifted upwards on mobile with dedicated bottom clearance */}
       <div
         className={`relative w-full max-w-[96vw] xl:max-w-[94vw] 2xl:max-w-[1650px] flex items-center justify-center my-auto transition-all duration-300 touch-pan-y ${
           showOverlayControls && showThumbnails && items.length > 1
-            ? 'h-[calc(100vh-130px)] sm:h-[calc(100vh-140px)] min-h-[300px] pt-10 sm:pt-12 pb-1'
-            : 'h-[calc(100vh-75px)] sm:h-[calc(100vh-85px)] min-h-[320px] pt-8 sm:pt-10 pb-1'
+            ? 'h-[calc(100dvh-135px)] sm:h-[calc(100vh-140px)] min-h-[280px] pt-2 sm:pt-10 pb-16 sm:pb-3 -translate-y-2.5 sm:translate-y-0'
+            : 'h-[calc(100dvh-75px)] sm:h-[calc(100vh-85px)] min-h-[300px] pt-2 sm:pt-8 pb-5 sm:pb-2 -translate-y-1 sm:translate-y-0'
         }`}
         onClick={handleMediaClick}
         onMouseDown={(e) => {
@@ -1108,7 +1121,7 @@ export default function MediaLightbox({
             key={activeMedia?.id || `${currentIndex}-${currentSlideIndex}`}
             style={{
               aspectRatio: `${activeVideoRatio}`,
-              maxWidth: `min(94vw, calc(${showThumbnails ? 'calc(100vh - 165px)' : 'calc(100vh - 95px)'} * ${activeVideoRatio}), 1450px)`,
+              maxWidth: `min(94vw, calc(${showThumbnails ? 'calc(100dvh - 175px)' : 'calc(100dvh - 95px)'} * ${activeVideoRatio}), 1450px)`,
             }}
             className="relative w-full max-h-full rounded-2xl md:rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/10 flex items-center justify-center mx-auto transition-all duration-300"
           >
@@ -1200,7 +1213,7 @@ export default function MediaLightbox({
                       setVideoDimensions({ width: videoWidth, height: videoHeight });
                     }
                   }}
-                  className="w-full h-full max-h-[85vh] object-contain rounded-2xl md:rounded-3xl"
+                  className="w-full h-full max-h-[75dvh] sm:max-h-[85vh] object-contain rounded-2xl md:rounded-3xl"
                   onPlay={() => {
                     isVideoPlayingRef.current = true;
                     setIsVideoPlaying(true);
@@ -1247,40 +1260,46 @@ export default function MediaLightbox({
                   : 'transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
               }}
             >
-              {/* Seamless Underlay: Previous image stays 100% visible underneath while incoming image paints */}
-              {activeLoadedSrc &&
-                activeLoadedSrc !== activeMedia?.image &&
-                prevItemRef.current?.type !== 'video' && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
-                    <Image
-                      src={getOptimizedCloudinaryUrl(activeLoadedSrc, { width: 2400 })}
-                      alt=""
-                      fill
-                      priority
-                      unoptimized
-                      sizes="(max-width: 1280px) 96vw, 1920px"
-                      className="object-contain pointer-events-none select-none"
-                      draggable={false}
-                    />
+              {/* Instant Low-Res Thumbnail Placeholder: Loaded in 0ms from filmstrip memory cache */}
+              {activeMedia?.image && (
+                <div
+                  className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-200 z-0 ${
+                    isHighResLoaded ? 'opacity-0' : 'opacity-100'
+                  }`}
+                >
+                  <Image
+                    src={getLightboxOptimizedUrl(activeMedia.image, 160)}
+                    alt=""
+                    fill
+                    unoptimized
+                    priority
+                    sizes="(max-width: 1280px) 96vw, 1920px"
+                    className="object-contain pointer-events-none select-none blur-[2px]"
+                    draggable={false}
+                  />
+                  {/* Subtle centered loader if high-res is still downloading */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-6 h-6 rounded-full border-2 border-white/20 border-t-white/80 animate-spin" />
                   </div>
-                )}
+                </div>
+              )}
 
-              {/* Active High-Performance Image */}
+              {/* Active High-Res Image (Preloaded & Instant from Cache) */}
               <div className="relative w-full h-full flex items-center justify-center z-10">
                 <Image
-                  src={getOptimizedCloudinaryUrl(activeMedia?.image || currentItem.image, { width: 2400 })}
+                  key={`${currentIndex}-${currentSlideIndex}-${activeMedia?.image}`}
+                  src={getLightboxOptimizedUrl(activeMedia?.image || currentItem.image, 1920)}
                   alt={activeMedia?.caption || currentItem.subcategoryLabel || 'Portfolio Image'}
                   fill
                   priority
                   unoptimized
                   sizes="(max-width: 1280px) 96vw, 1920px"
-                  className="object-contain pointer-events-none select-none"
+                  className={`object-contain pointer-events-none select-none transition-opacity duration-200 ${
+                    isHighResLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
                   draggable={false}
                   onLoad={() => {
-                    if (activeMedia?.image) {
-                      setActiveLoadedSrc(activeMedia.image);
-                      prevItemRef.current = activeMedia;
-                    }
+                    setIsHighResLoaded(true);
                   }}
                 />
               </div>
