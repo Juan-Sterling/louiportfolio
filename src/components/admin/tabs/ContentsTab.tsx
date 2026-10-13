@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import Image from 'next/image';
 import {
   Search,
   Plus,
@@ -21,6 +20,7 @@ import { AdminCategory } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
 import { resolveVideoPlayUrl } from '@/lib/r2';
 import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
+import AdminMediaThumbnail from '@/components/admin/AdminMediaThumbnail';
 
 interface ContentsTabProps {
   items: MediaItem[];
@@ -304,22 +304,25 @@ export default function ContentsTab({
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-4">
                         <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
-                          <Image
-                            src={
-                              getOptimizedCloudinaryUrl(
-                                (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                                getYouTubeThumbnail(item.videoUrl) ||
-                                'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
-                                { width: 160 }
-                              )
-                            }
-                            alt={item.subcategoryLabel}
-                            fill
-                            sizes="64px"
-                            className="object-cover"
-                          />
+                          {(() => {
+                            const rawMediaSrc =
+                              (item.image ? resolveVideoPlayUrl(item.image) : '') ||
+                              getYouTubeThumbnail(item.videoUrl) ||
+                              '';
+                            const optimizedMediaSrc = rawMediaSrc
+                              ? getOptimizedCloudinaryUrl(rawMediaSrc, { width: 160 })
+                              : '';
+                            return (
+                              <AdminMediaThumbnail
+                                src={optimizedMediaSrc}
+                                fallbackSrc={rawMediaSrc}
+                                alt={item.subcategoryLabel}
+                                className="w-full h-full object-cover"
+                              />
+                            );
+                          })()}
                           {item.type === 'video' && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
                               <Play className="w-3.5 h-3.5 fill-white text-white" />
                             </div>
                           )}

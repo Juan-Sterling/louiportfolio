@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import {
   LayoutGrid,
   RotateCcw,
@@ -24,6 +23,7 @@ import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { resolveVideoPlayUrl } from '@/lib/r2';
 import { getOptimizedCloudinaryUrl } from '@/lib/cloudinary';
+import AdminMediaThumbnail from '@/components/admin/AdminMediaThumbnail';
 
 interface LayoutTabProps {
   categoriesList: AdminCategory[];
@@ -336,7 +336,7 @@ export default function LayoutTab({
     await persistLayout(next, `Work removed from Slot #${slotNum}. Auto-saved.`);
   };
 
-  // Total Reset: Clear all slots back to automatic FIFO (order_index = 0)
+  // Total Reset: Clear all slots back to automatic random order (order_index = 0)
   const handleConfirmTotalReset = async () => {
     setIsResetConfirmModalOpen(false);
     setSlotAssignments({});
@@ -374,7 +374,7 @@ export default function LayoutTab({
         }, 150);
       }
     } else {
-      showToast(`Layout for "${activeSubcat?.label}" restored to automatic.`);
+      showToast(`Layout for "${activeSubcat?.label}" restored to automatic random order.`);
     }
   };
 
@@ -416,7 +416,7 @@ export default function LayoutTab({
             </h2>
             <p className="text-xs sm:text-sm text-neutral-400 font-sans max-w-2xl leading-relaxed">
               Arrange prioritized works precisely on the 3-column public gallery grid per subcategory.
-              Unassigned slots are seamlessly filled by recent regular works (FIFO).
+              Unassigned slots are seamlessly filled by regular works in random order.
             </p>
           </div>
 
@@ -688,31 +688,34 @@ export default function LayoutTab({
                       <div
                         key={item.id}
                         className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-4 ${isTargetSlot
-                            ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-500/30'
-                            : isOccupiedElsewhere
-                              ? 'bg-white/[0.03] border-white/10 hover:border-white/20'
-                              : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/[0.07]'
+                          ? 'bg-amber-500/10 border-amber-500/40 ring-1 ring-amber-500/30'
+                          : isOccupiedElsewhere
+                            ? 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                            : 'bg-white/5 border-white/10 hover:border-white/25 hover:bg-white/[0.07]'
                           }`}
                       >
                         {/* Thumbnail & Info */}
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-neutral-900 shrink-0 border border-white/10">
-                            <Image
-                              src={
-                                getOptimizedCloudinaryUrl(
-                                  (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                                  getYouTubeThumbnail(item.videoUrl) ||
-                                  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
-                                  { width: 160 }
-                                )
-                              }
-                              alt={item.description || item.subcategoryLabel}
-                              fill
-                              sizes="64px"
-                              className="object-cover"
-                            />
+                            {(() => {
+                              const rawMediaSrc =
+                                (item.image ? resolveVideoPlayUrl(item.image) : '') ||
+                                getYouTubeThumbnail(item.videoUrl) ||
+                                '';
+                              const optimizedMediaSrc = rawMediaSrc
+                                ? getOptimizedCloudinaryUrl(rawMediaSrc, { width: 160 })
+                                : '';
+                              return (
+                                <AdminMediaThumbnail
+                                  src={optimizedMediaSrc}
+                                  fallbackSrc={rawMediaSrc}
+                                  alt={item.description || item.subcategoryLabel}
+                                  className="w-full h-full object-cover"
+                                />
+                              );
+                            })()}
                             {item.type === 'video' && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
                                 <Play className="w-3.5 h-3.5 fill-white text-white" />
                               </div>
                             )}
@@ -815,7 +818,7 @@ export default function LayoutTab({
               <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
                 This action will clear all assigned slots for subcategory{' '}
                 <strong className="text-white">&quot;{activeSubcat?.label}&quot;</strong>.
-                All works will return to standard chronological order (FIFO) in the live gallery.
+                All works will return to dynamic random order in the live gallery.
               </p>
             </div>
 
@@ -866,8 +869,8 @@ function SlotCard({
   return (
     <div
       className={`rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all min-h-[300px] border ${isFilled
-          ? 'bg-[#15151a] border-white/15 hover:border-white/30 shadow-xl'
-          : 'bg-[#111115] border-dashed border-white/15 hover:border-amber-400/40 hover:bg-[#14141a]'
+        ? 'bg-[#15151a] border-white/15 hover:border-white/30 shadow-xl'
+        : 'bg-[#111115] border-dashed border-white/15 hover:border-amber-400/40 hover:bg-[#14141a]'
         }`}
     >
       {/* Card Header */}
@@ -875,8 +878,8 @@ function SlotCard({
         <div className="flex items-center gap-2">
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider px-3 py-1 rounded-full ${isFilled
-                ? 'bg-amber-400 text-black shadow-md'
-                : 'bg-white/10 text-neutral-400'
+              ? 'bg-amber-400 text-black shadow-md'
+              : 'bg-white/10 text-neutral-400'
               }`}
           >
             <span>SLOT #{slotNum}</span>
@@ -907,22 +910,25 @@ function SlotCard({
         <div className="my-4 space-y-3 flex-1 flex flex-col justify-center">
           {/* Media Thumbnail */}
           <div className="relative w-full aspect-[16/10] rounded-2xl overflow-hidden bg-neutral-900 border border-white/10 group">
-            <Image
-              src={
-                getOptimizedCloudinaryUrl(
-                  (item.image ? resolveVideoPlayUrl(item.image) : '') ||
-                  getYouTubeThumbnail(item.videoUrl) ||
-                  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="%2322222a"/></svg>',
-                  { width: 600 }
-                )
-              }
-              alt={item.description || item.subcategoryLabel}
-              fill
-              sizes="(max-width: 768px) 100vw, 33vw"
-              className="object-cover group-hover:scale-105 transition-transform duration-500"
-            />
+            {(() => {
+              const rawMediaSrc =
+                (item.image ? resolveVideoPlayUrl(item.image) : '') ||
+                getYouTubeThumbnail(item.videoUrl) ||
+                '';
+              const optimizedMediaSrc = rawMediaSrc
+                ? getOptimizedCloudinaryUrl(rawMediaSrc, { width: 600 })
+                : '';
+              return (
+                <AdminMediaThumbnail
+                  src={optimizedMediaSrc}
+                  fallbackSrc={rawMediaSrc}
+                  alt={item.description || item.subcategoryLabel}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+              );
+            })()}
             {item.type === 'video' && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
                 <Play className="w-6 h-6 fill-white text-white drop-shadow-md" />
               </div>
             )}
@@ -957,10 +963,10 @@ function SlotCard({
           </div>
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-neutral-300 uppercase tracking-wide">
-              Auto Slot (FIFO)
+              Auto Slot
             </p>
             <p className="text-[11px] text-neutral-500 font-sans max-w-[200px] leading-relaxed">
-              Filled automatically by recent works without gaps.
+              Filled automatically by unslotted works in random order.
             </p>
           </div>
         </div>

@@ -53,11 +53,9 @@ Slot #1, #2, #3: Baris 1 (Kiri, Tengah, Kanan)
 Slot #4, #5, #6: Baris 2 (Kiri, Tengah, Kanan)
 Slot #7+: Ekspansi baris berikutnya (Kiri, Tengah, Kanan)
 Kondisi Terisi (Admin): Dirender deterministik pada slotnya
-Kondisi Dikosongkan (Fallback): Otomatis diisi karya reguler terbaru (FIFO) tanpa menimbulkan celah kosong
+Kondisi Dikosongkan (Fallback): Otomatis diisi karya reguler secara acak (Random / Acak) tanpa menimbulkan celah kosong
 ## 6. LOGIKA EKSEKUSI PUBLIK (MODERNGALLERY.TSX)
-Pada antarmuka publik, data diambil dengan pengurutan gabungan: .order('order_index', {
-ascending: true }) lalu .order('created_at', { ascending: false }). Algoritma
-distributeGalleryItemsBalanced memetakan slot secara teratur ke 3 kolom:
+Pada antarmuka publik, karya berslot (order_index > 0) menempati posisi slot prioritas, sedangkan karya tanpa slot (order_index = 0) didistribusikan secara acak dinamis (Random / Acak) dan seimbang ke 3 kolom galeri:
 Kolom 1: Slot #1, Slot #4, Slot #7...
 Kolom 2: Slot #2, Slot #5, Slot #8... (dimulai dengan column-break)
 Kolom 3: Slot #3, Slot #6, Slot #9... (dimulai dengan column-break)
@@ -79,7 +77,7 @@ Reset Parsial: Ikon ✕ pada kartu slot untuk mengosongkan
 karya spesifik kembali ke mode otomatis.
 Reset Total: Tombol "Reset ke Otomatis" dengan modal
 konfirmasi untuk mengembalikan semua order_index
-subkategori ke 0.
+subkategori ke 0 (urutan acak dinamis).
 Tambah Baris: Tombol [+ Tambah Baris] menambah 3
 slot kosong baru sekaligus.
 ## 8. ALUR PERSISTENSI TRANSAKSI DATABASE SUPABASE
@@ -99,6 +97,6 @@ Eksekusi Auto-SwapMemilih karya yang sudah terpasang menukar posisi
 secara atomik disertai label badge.
 ## WAJIB LULUS QA
 Pembalikan ResetMenekan tombol reset mengembalikan urutan ke
-mode kronologis seimbang seketika.
+mode acak dinamis seimbang seketika.
 ## WAJIB LULUS QA
 Spesifikasi Kebutuhan Produk (PRD) — LOUI PortfolioHalaman 3 dari 3

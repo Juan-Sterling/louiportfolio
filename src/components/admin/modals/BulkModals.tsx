@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import Image from 'next/image';
 import { X, Edit3, Trash2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { AdminCategory, BulkEditFormData } from '@/types/admin';
 import { MediaItem, getYouTubeThumbnail } from '@/data/portfolioData';
+import AdminMediaThumbnail from '@/components/admin/AdminMediaThumbnail';
 
 interface BulkModalsProps {
   // Bulk Edit
@@ -285,16 +285,15 @@ export default function BulkModals({
                     className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-neutral-900 border border-white/10"
                     title={item.subcategoryLabel}
                   >
-                    <Image
+                    <AdminMediaThumbnail
                       src={
                         item.image ||
                         getYouTubeThumbnail(item.videoUrl) ||
-                        'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%2322222a"/></svg>'
+                        ''
                       }
+                      fallbackSrc={item.image || getYouTubeThumbnail(item.videoUrl) || ''}
                       alt={item.subcategoryLabel}
-                      fill
-                      sizes="48px"
-                      className="object-cover"
+                      className="w-full h-full object-cover"
                     />
                   </div>
                 ))}

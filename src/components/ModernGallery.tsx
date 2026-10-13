@@ -66,7 +66,20 @@ function getItemRenderHeight(item: MediaItem, aspectRatios?: Record<string, numb
 }
 
 /**
- * Distributes gallery items deterministically across 3 masonry columns with balanced vertical height:
+ * Deterministic pseudo-random score generator based on item ID and seed.
+ * Guarantees stable positioning across re-renders to prevent layout jumps/flicker
+ * while ensuring works are completely randomized (not FIFO / not chronological).
+ */
+function getStableRandomScore(id: string, seed: number = 7919): number {
+  let h = seed;
+  for (let i = 0; i < id.length; i++) {
+    h = Math.imul(31, h) + id.charCodeAt(i) | 0;
+  }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/**
+ * Distributes gallery items across 3 masonry columns with balanced vertical height:
  * 1. Works with order_index > 0 are assigned to exact slot positions:
  *    - Slot 1: Column 2 (Center Top)
  *    - Slot 2: Column 3 (Right Top)
@@ -75,11 +88,10 @@ function getItemRenderHeight(item: MediaItem, aspectRatios?: Record<string, numb
  *    - Slot 5: Column 3 (Right, below Slot 2)
  *    - Slot 6: Column 1 (Left, below Slot 3)
  *    - and so on (order_index % 3: 1 -> Col 1, 2 -> Col 2, 0 -> Col 0).
- * 2. Unslotted works (order_index === 0) follow the commit ffde2026 distribution:
- *    - If no works are slotted, the newest work is placed at top-left.
+ * 2. Unslotted works (order_index === 0) are randomized (acak, no FIFO):
+ *    - Works are pseudo-randomly shuffled using a deterministic seed to ensure stability.
  *    - Videos are distributed across columns round-robin / least-videos so they never clump.
- *    - Photos across subcategories are distributed to balance vertical column height so all
- *      columns end cleanly and no column leaves an empty hole at the bottom.
+ *    - Photos are distributed to balance vertical column height so all columns end cleanly.
  *    - Inside each column, photos and videos are interleaved smoothly.
  * 3. Returns { columns, flatItems } where columns provides the 3 deterministic columns,
  *    and flatItems provides the sequential order for mobile and lightbox.
@@ -87,7 +99,8 @@ function getItemRenderHeight(item: MediaItem, aspectRatios?: Record<string, numb
 export function distributeGalleryColumns(
   items: MediaItem[],
   aspectRatios?: Record<string, number>,
-  hasDescription: boolean = true
+  hasDescription: boolean = true,
+  randomSeed: number = 7919
 ): DistributedColumns {
   if (!items || items.length === 0) {
     return { columns: [[], [], []], flatItems: [] };
@@ -121,39 +134,26 @@ export function distributeGalleryColumns(
     colHeights[colIdx] += getItemRenderHeight(item, aspectRatios);
   }
 
-  // Regular items: order_index === 0
+  // Regular items: order_index === 0, sorted randomly (acak, no FIFO)
   const regularItems = items
     .filter((i) => (i.order_index ?? 0) === 0)
     .sort((a, b) => {
-      if (a.created_at && b.created_at) {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-      return 0;
+      const scoreA = getStableRandomScore(a.id, randomSeed);
+      const scoreB = getStableRandomScore(b.id, randomSeed);
+      return scoreA - scoreB;
     });
 
-  let unslottedPool = regularItems;
+  const unslottedPool = regularItems;
 
-  // KASUS: TIDAK ADA KARYA BERSLOT (COMMIT ffde2026)
-  // Col 0 gets newestItem at top (under description)!
-  if (slottedItems.length === 0 && unslottedPool.length > 0) {
-    const newestItem = unslottedPool[0];
-    unslottedPool = unslottedPool.slice(1);
-    columns[0].push(newestItem);
-    slottedByCol[0].push(newestItem);
-    colHeights[0] += getItemRenderHeight(newestItem, aspectRatios);
-  }
-
-  // Separate remaining items into videos and photos grouped by subcategory
+  // Separate remaining items into videos and photos
   const remainingVideos: MediaItem[] = [];
-  const photosBySubcat: Record<string, MediaItem[]> = {};
+  const remainingPhotos: MediaItem[] = [];
 
   for (const item of unslottedPool) {
     if (item.type === 'video') {
       remainingVideos.push(item);
     } else {
-      const sub = item.subcategory || 'default';
-      if (!photosBySubcat[sub]) photosBySubcat[sub] = [];
-      photosBySubcat[sub].push(item);
+      remainingPhotos.push(item);
     }
   }
 
@@ -184,26 +184,19 @@ export function distributeGalleryColumns(
   }
 
   // 2. Distribute photos greedily to column with lowest accumulated height (balancing empty space)
-  const subcatKeys = Object.keys(photosBySubcat);
-  while (subcatKeys.some((k) => photosBySubcat[k].length > 0)) {
-    for (const key of subcatKeys) {
-      if (photosBySubcat[key].length > 0) {
-        const photo = photosBySubcat[key].shift()!;
+  for (const photo of remainingPhotos) {
+    let bestCol = -1;
+    let minH = Infinity;
 
-        let bestCol = -1;
-        let minH = Infinity;
-
-        for (let c = 0; c < numCols; c++) {
-          if (colHeights[c] < minH) {
-            minH = colHeights[c];
-            bestCol = c;
-          }
-        }
-
-        columns[bestCol].push(photo);
-        colHeights[bestCol] += getItemRenderHeight(photo, aspectRatios);
+    for (let c = 0; c < numCols; c++) {
+      if (colHeights[c] < minH) {
+        minH = colHeights[c];
+        bestCol = c;
       }
     }
+
+    columns[bestCol].push(photo);
+    colHeights[bestCol] += getItemRenderHeight(photo, aspectRatios);
   }
 
   // 3. Two-Tier Optimization Phase: Transfer & Pairwise Swap
@@ -276,32 +269,19 @@ export function distributeGalleryColumns(
     }
   }
 
-  // 4. Inside each column, keep slotted items at head, then interleave unslotted photos and videos stably
+  // 4. Inside each column, keep slotted items at head, then interleave unslotted photos and videos smoothly
   for (let c = 0; c < numCols; c++) {
     const lockedHead = slottedByCol[c];
     const unslottedInCol = columns[c].slice(lockedHead.length);
 
-    const itemsBySub: Record<string, MediaItem[]> = {};
+    const colPhotos: MediaItem[] = [];
     const colVideos: MediaItem[] = [];
 
     for (const it of unslottedInCol) {
       if (it.type === 'video') {
         colVideos.push(it);
       } else {
-        const s = it.subcategory || 'default';
-        if (!itemsBySub[s]) itemsBySub[s] = [];
-        itemsBySub[s].push(it);
-      }
-    }
-
-    const subList = Object.keys(itemsBySub);
-    const interleavedPhotos: MediaItem[] = [];
-
-    while (subList.some((s) => itemsBySub[s].length > 0)) {
-      for (const s of subList) {
-        if (itemsBySub[s].length > 0) {
-          interleavedPhotos.push(itemsBySub[s].shift()!);
-        }
+        colPhotos.push(it);
       }
     }
 
@@ -310,12 +290,12 @@ export function distributeGalleryColumns(
     let vIdx = 0;
     const step =
       colVideos.length > 0
-        ? Math.max(2, Math.floor(interleavedPhotos.length / colVideos.length))
+        ? Math.max(2, Math.floor(colPhotos.length / colVideos.length))
         : 3;
 
-    while (pIdx < interleavedPhotos.length || vIdx < colVideos.length) {
-      for (let s = 0; s < step && pIdx < interleavedPhotos.length; s++) {
-        finalList.push(interleavedPhotos[pIdx++]);
+    while (pIdx < colPhotos.length || vIdx < colVideos.length) {
+      for (let s = 0; s < step && pIdx < colPhotos.length; s++) {
+        finalList.push(colPhotos[pIdx++]);
       }
       if (vIdx < colVideos.length) {
         finalList.push(colVideos[vIdx++]);
