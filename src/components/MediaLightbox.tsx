@@ -1038,13 +1038,6 @@ export default function MediaLightbox({
             <span className="text-[11px] sm:text-xs font-mono text-white/60 tracking-wider shrink-0 font-medium">
               {String(currentIndex + 1).padStart(2, '0')} / {String(items.length).padStart(2, '0')}
             </span>
-
-            {effectiveSlides.length > 1 && (
-              <span className="text-[11px] sm:text-xs font-mono text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full tracking-wider shrink-0 font-medium flex items-center gap-1.5 shadow-sm">
-                <Layers className="w-3 h-3 text-emerald-300" />
-                <span>Slide {currentSlideIndex + 1}/{effectiveSlides.length}</span>
-              </span>
-            )}
           </div>
 
           {(activeMedia?.caption || currentItem.description) && (
