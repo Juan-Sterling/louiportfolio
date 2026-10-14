@@ -305,59 +305,36 @@ export function distributeGalleryColumns(
     columns[c] = [...lockedHead, ...finalList];
   }
 
-  // Construct gallery-ordered sequential list following the visual layout row-by-row
-  const galleryOrderedItems: MediaItem[] = [];
-  const seenIds = new Set<string>();
+  // 5. Construct 100% deterministic flatItems:
+  // Menjamin urutan karya kembar identik 100% di SEMUA perangkat (iPhone X, Android, PC)
+  // bebas dari ketergantungan sinyal internet atau jeda decoding gambar:
+  // - Bagian teratas: Karya berslot diurutkan presisi berdasarkan order_index (Slot 1, Slot 2, Slot 3, dst.)
+  // - Bagian bawah: Karya reguler diurutkan secara deterministik berdasarkan skor ID dengan video terdistribusi selang-seling rapi.
+  const regularPhotos = regularItems.filter((i) => i.type !== 'video');
+  const regularVideos = regularItems.filter((i) => i.type === 'video');
 
-  const maxLen = Math.max(
-    (columns[0]?.length || 0) + (hasDescription ? 1 : 0),
-    columns[1]?.length || 0,
-    columns[2]?.length || 0
-  );
+  const regularInterleaved: MediaItem[] = [];
+  let rpIdx = 0;
+  let rvIdx = 0;
+  const regularStep =
+    regularVideos.length > 0
+      ? Math.max(2, Math.floor(regularPhotos.length / regularVideos.length))
+      : 3;
 
-  for (let r = 0; r < maxLen; r++) {
-    const c0Item = hasDescription ? (r > 0 ? columns[0]?.[r - 1] : null) : columns[0]?.[r];
-    const c1Item = columns[1]?.[r];
-    const c2Item = columns[2]?.[r];
-
-    if (hasDescription && r === 0) {
-      if (c1Item && !seenIds.has(c1Item.id)) {
-        seenIds.add(c1Item.id);
-        galleryOrderedItems.push(c1Item);
-      }
-      if (c2Item && !seenIds.has(c2Item.id)) {
-        seenIds.add(c2Item.id);
-        galleryOrderedItems.push(c2Item);
-      }
-    } else {
-      if (c0Item && !seenIds.has(c0Item.id)) {
-        seenIds.add(c0Item.id);
-        galleryOrderedItems.push(c0Item);
-      }
-      if (c1Item && !seenIds.has(c1Item.id)) {
-        seenIds.add(c1Item.id);
-        galleryOrderedItems.push(c1Item);
-      }
-      if (c2Item && !seenIds.has(c2Item.id)) {
-        seenIds.add(c2Item.id);
-        galleryOrderedItems.push(c2Item);
-      }
+  while (rpIdx < regularPhotos.length || rvIdx < regularVideos.length) {
+    for (let s = 0; s < regularStep && rpIdx < regularPhotos.length; s++) {
+      regularInterleaved.push(regularPhotos[rpIdx++]);
+    }
+    if (rvIdx < regularVideos.length) {
+      regularInterleaved.push(regularVideos[rvIdx++]);
     }
   }
 
-  // Safety fallback: append any uncaptured items
-  for (const col of columns) {
-    for (const item of col) {
-      if (item && !seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        galleryOrderedItems.push(item);
-      }
-    }
-  }
+  const deterministicFlatItems: MediaItem[] = [...slottedItems, ...regularInterleaved];
 
   return {
     columns,
-    flatItems: galleryOrderedItems,
+    flatItems: deterministicFlatItems,
   };
 }
 
@@ -430,6 +407,12 @@ export default function ModernGallery({
 
   useEffect(() => {
     setHasMounted(true);
+    // Ultimate fail-safe: pastikan loading screen selalu terbuka maksimal dalam 1.5s setelah mount
+    const mountEmergencyTimer = setTimeout(() => {
+      setIsArrangingLayout(false);
+      setIsLoading(false);
+    }, 1500);
+    return () => clearTimeout(mountEmergencyTimer);
   }, []);
 
   useEffect(() => {
@@ -679,8 +662,8 @@ export default function ModernGallery({
     ];
   }, [desktopColumns]);
 
-  // PRELOAD & DECODE ALL IMAGES IN MEMORY BEFORE DISPLAYING TO USER
-  // Menjamin semua gambar sudah tersusun dan ter-decode 100% di memori browser sebelum ditampilkan
+  // PRELOAD & DETECT IMAGE ASPECT RATIOS BEFORE DISPLAYING
+  // Dioptimalkan khusus agar kompatibel dengan Safari iOS 16 (iPhone X) tanpa memory overload atau hanging
   useEffect(() => {
     if (itemsToPreload.length === 0) {
       setIsArrangingLayout(false);
@@ -696,6 +679,11 @@ export default function ModernGallery({
 
       const promises = itemsToPreload.map((item) => {
         return new Promise<void>((resolve) => {
+          // Safety timeout per gambar: maksimal 600ms agar koneksi lambat tidak menahan galeri
+          const imgTimeout = setTimeout(() => {
+            resolve();
+          }, 600);
+
           const isVideo = item.type === 'video' && Boolean(item.videoUrl);
           const isYouTube = isVideo && item.videoUrl ? Boolean(getYouTubeVideoId(item.videoUrl)) : false;
           const fallbackThumbnail =
@@ -705,61 +693,64 @@ export default function ModernGallery({
           const url = getOptimizedCloudinaryUrl(resolveVideoPlayUrl(rawThumbnail), { width: 1200 });
 
           const img = new window.Image();
-          img.src = url;
 
           const onFinish = () => {
+            clearTimeout(imgTimeout);
             if (img.naturalWidth && img.naturalHeight && img.naturalHeight > 0) {
               detectedAspects[item.id] = img.naturalWidth / img.naturalHeight;
             }
-            if (img.decode) {
-              img.decode().then(() => resolve()).catch(() => resolve());
-            } else {
-              resolve();
-            }
+            // Langsung resolve saat metadata dimensi siap.
+            // HINDARI img.decode() karena memicu bug WebKit hanging & memory pressure di Safari iOS 16 (iPhone X).
+            resolve();
           };
+
+          img.onload = onFinish;
+          img.onerror = () => {
+            clearTimeout(imgTimeout);
+            resolve();
+          };
+
+          img.src = url;
 
           if (img.complete && img.naturalHeight > 0) {
             onFinish();
-          } else {
-            img.onload = onFinish;
-            img.onerror = () => resolve();
           }
         });
       });
 
-      await Promise.all(promises);
+      // Master race: Tunggu gambar selesai ATAU maksimal 900ms (mana yang lebih dulu)
+      // Menjamin web TIDAK PERNAH terjebak infinite loading di perangkat apapun
+      const masterTimeout = new Promise<void>((resolve) => {
+        setTimeout(resolve, 900);
+      });
+
+      await Promise.race([Promise.all(promises), masterTimeout]);
 
       if (isCancelled) return;
 
       // Update aspect ratios map so GalleryCard and distributeGalleryColumns compute exact dimensions
       setAspectRatios((prev) => ({ ...prev, ...detectedAspects }));
 
-      // Ensure minimal duration of 300ms for smooth skeleton transition so layout settles
+      // Durasi minimal 200ms untuk transisi skeleton yang mulus dan elegan
       const elapsed = Date.now() - startTime;
-      const minDisplayTime = 300;
-      const remainingWait = Math.max(100, minDisplayTime - elapsed);
+      const minDisplayTime = 200;
+      const remainingWait = Math.max(50, minDisplayTime - elapsed);
 
       setTimeout(() => {
         if (!isCancelled) {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              if (!isCancelled) {
-                setIsArrangingLayout(false);
-              }
-            });
-          });
+          setIsArrangingLayout(false);
         }
       }, remainingWait);
     };
 
     preloadAllImages();
 
-    // Safety timeout: maximum 2500ms
+    // Absolute fallback timer: maksimal 1200ms, layout dipastikan terbuka
     const safetyTimer = setTimeout(() => {
       if (!isCancelled) {
         setIsArrangingLayout(false);
       }
-    }, 2500);
+    }, 1200);
 
     return () => {
       isCancelled = true;
