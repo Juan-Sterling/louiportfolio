@@ -35,17 +35,17 @@ function GalleryCard({
   const [isPreviewActive, setIsPreviewActive] = useState<boolean>(false);
   const [isMediaReady, setIsMediaReady] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(false);
-  const [playbackProgress, setPlaybackProgress] = useState<number>(0);
-  const [hasCompletedPreview, setHasCompletedPreview] = useState<boolean>(false);
   const [previewDuration, setPreviewDuration] = useState<number>(10);
   const previewDurationRef = useRef<number>(10);
 
-  // Timers refs
+  // Timers and element refs
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const youtubeStartTimeRef = useRef<number | null>(null);
 
   // Staggered entrance animation delay
   // Snappy delay so cards appear smoothly and stably together
@@ -73,20 +73,39 @@ function GalleryCard({
     width: 1200,
   });
 
-  // Clear all pending timers and reset video element
+  // Safe helper to dispatch commands to embedded YouTube player
+  const sendYouTubeCommand = useCallback((func: string, args: unknown[] = []) => {
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({
+            event: 'command',
+            func,
+            args,
+          }),
+          '*'
+        );
+      } catch {
+        // Ignore cross-origin errors
+      }
+    }
+  }, []);
+
+  // Clear all pending timers and reset media elements
   const clearTimers = useCallback(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
-    if (durationTimerRef.current) {
-      clearTimeout(durationTimerRef.current);
-      durationTimerRef.current = null;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
     }
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    youtubeStartTimeRef.current = null;
     if (videoRef.current) {
       try {
         videoRef.current.pause();
@@ -98,21 +117,54 @@ function GalleryCard({
     if (progressBarRef.current) {
       progressBarRef.current.style.transform = 'scaleX(0)';
     }
-    setPlaybackProgress(0);
   }, []);
 
-  // Gracefully end the 10-second preview
+  // Gracefully end preview if needed
   const handlePreviewEnd = useCallback(() => {
     clearTimers();
     setIsPreviewActive(false);
     setIsMediaReady(false);
     setIsBuffering(false);
-    setHasCompletedPreview(true);
-    setPlaybackProgress(0);
   }, [clearTimers]);
 
-  // Butter-smooth 60fps/120fps progress tracking via requestAnimationFrame
-  const startProgressAnimation = useCallback(() => {
+  // YouTube 10-second preview loop animation (Only runs when YouTube is actually playing)
+  const startYouTubeProgress = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    youtubeStartTimeRef.current = performance.now();
+
+    const loopDur = 10; // Exactly 10 seconds max preview!
+
+    const tick = () => {
+      if (!youtubeStartTimeRef.current) return;
+      const now = performance.now();
+      const elapsed = (now - youtubeStartTimeRef.current) / 1000;
+
+      if (elapsed >= loopDur) {
+        // 10s reached: Loop YouTube back to 0:00!
+        sendYouTubeCommand('seekTo', [0, true]);
+        sendYouTubeCommand('playVideo', []);
+        youtubeStartTimeRef.current = performance.now();
+        if (progressBarRef.current) {
+          progressBarRef.current.style.transform = 'scaleX(0)';
+        }
+      } else {
+        const ratio = Math.min(1, Math.max(0, elapsed / loopDur));
+        if (progressBarRef.current) {
+          progressBarRef.current.style.transform = `scaleX(${ratio})`;
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [sendYouTubeCommand]);
+
+  // Direct video (Cloudflare / R2) preview loop animation (Max 10s or video duration if shorter)
+  const startDirectVideoProgress = useCallback(() => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -121,37 +173,104 @@ function GalleryCard({
     const tick = () => {
       if (videoRef.current && progressBarRef.current) {
         const cur = videoRef.current.currentTime;
-        const dur = previewDurationRef.current || 10;
-        if (dur > 0) {
-          const ratio = Math.min(1, Math.max(0, cur / dur));
+        const maxDur = previewDurationRef.current || 10;
+
+        if (cur >= maxDur) {
+          // Preview limit reached: rewind video to 0:00 and continue looping!
+          videoRef.current.currentTime = 0;
+          progressBarRef.current.style.transform = 'scaleX(0)';
+        } else {
+          const ratio = Math.min(1, Math.max(0, cur / maxDur));
           progressBarRef.current.style.transform = `scaleX(${ratio})`;
-        }
-        if (cur >= dur) {
-          handlePreviewEnd();
-          return;
         }
       }
       rafRef.current = requestAnimationFrame(tick);
     };
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [handlePreviewEnd]);
+  }, []);
+
+  // Listen to YouTube player state changes to know EXACTLY when video starts playing
+  useEffect(() => {
+    if (!isPreviewActive || !isYouTube) return;
+
+    const handleWindowMessage = (e: MessageEvent) => {
+      if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) {
+        return;
+      }
+
+      let data: any;
+      try {
+        data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      } catch {
+        return;
+      }
+
+      if (!data) return;
+
+      if (data.event === 'onReady') {
+        try {
+          iframeRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ event: 'listening' }),
+            '*'
+          );
+        } catch {}
+      }
+
+      // 1 = PLAYING, 3 = BUFFERING, 0 = ENDED
+      if (data.event === 'onStateChange') {
+        if (data.info === 1) {
+          if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
+          setIsMediaReady(true);
+          setIsBuffering(false);
+          startYouTubeProgress();
+        } else if (data.info === 3) {
+          setIsBuffering(true);
+        } else if (data.info === 0) {
+          // If video finishes before 10s: rewind immediately
+          sendYouTubeCommand('seekTo', [0, true]);
+          sendYouTubeCommand('playVideo', []);
+          youtubeStartTimeRef.current = performance.now();
+          if (progressBarRef.current) {
+            progressBarRef.current.style.transform = 'scaleX(0)';
+          }
+        }
+      }
+
+      if (data.event === 'infoDelivery' && data.info) {
+        if (data.info.playerState === 1) {
+          if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
+          setIsMediaReady(true);
+          setIsBuffering(false);
+          startYouTubeProgress();
+        }
+      }
+    };
+
+    window.addEventListener('message', handleWindowMessage);
+    return () => {
+      window.removeEventListener('message', handleWindowMessage);
+    };
+  }, [isPreviewActive, isYouTube, sendYouTubeCommand, startYouTubeProgress]);
 
   // Mouse enter: trigger debounced video preview
   const handleMouseEnter = () => {
     if (isVideo) {
       clearTimers();
-      setHasCompletedPreview(false);
       previewDurationRef.current = 10;
       setPreviewDuration(10);
-      setPlaybackProgress(0);
 
       // Debounce slightly (220ms) so fast mouse passes across the grid don't trigger iframes
       debounceTimerRef.current = setTimeout(() => {
         setIsPreviewActive(true);
         setIsMediaReady(false);
         setIsBuffering(true);
-        // Do NOT start countdown timer here; wait until media is actually ready and playing
       }, 220);
     }
   };
@@ -162,10 +281,8 @@ function GalleryCard({
     setIsPreviewActive(false);
     setIsMediaReady(false);
     setIsBuffering(false);
-    setHasCompletedPreview(false);
     previewDurationRef.current = 10;
     setPreviewDuration(10);
-    setPlaybackProgress(0);
   };
 
   // Clean up timers on unmount
@@ -181,9 +298,7 @@ function GalleryCard({
     setIsPreviewActive(false);
     setIsMediaReady(false);
     setIsBuffering(false);
-    setHasCompletedPreview(false);
     setPreviewDuration(10);
-    setPlaybackProgress(0);
     onOpenLightbox(fullIndex !== -1 ? fullIndex : idx);
   };
 
@@ -238,20 +353,30 @@ function GalleryCard({
               >
                 {isYouTube ? (
                   <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&modestbranding=1&loop=0&start=0&end=10&playsinline=1&enablejsapi=1&iv_load_policy=3&disablekb=1`}
+                    ref={iframeRef}
+                    src={`https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&modestbranding=1&playsinline=1&enablejsapi=1&origin=${typeof window !== 'undefined' ? encodeURIComponent(window.location.origin) : ''}&widgetid=1`}
                     title={item.subcategoryLabel || 'Video Preview'}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     onLoad={() => {
-                      setTimeout(() => {
-                        setIsMediaReady(true);
-                        setIsBuffering(false);
-                        if (durationTimerRef.current) {
-                          clearTimeout(durationTimerRef.current);
-                        }
-                        durationTimerRef.current = setTimeout(() => {
-                          handlePreviewEnd();
-                        }, 10000);
-                      }, 400);
+                      try {
+                        iframeRef.current?.contentWindow?.postMessage(
+                          JSON.stringify({ event: 'listening' }),
+                          '*'
+                        );
+                      } catch {}
+
+                      // Fallback timer: if onStateChange isn't delivered within 1200ms, start playback
+                      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+                      fallbackTimerRef.current = setTimeout(() => {
+                        setIsMediaReady((prevReady) => {
+                          if (!prevReady) {
+                            setIsBuffering(false);
+                            startYouTubeProgress();
+                            return true;
+                          }
+                          return prevReady;
+                        });
+                      }, 1200);
                     }}
                     className="w-full h-full object-cover pointer-events-none scale-[1.04]"
                   />
@@ -276,38 +401,22 @@ function GalleryCard({
                     }}
                     onWaiting={() => {
                       setIsBuffering(true);
-                      if (durationTimerRef.current) {
-                        clearTimeout(durationTimerRef.current);
-                        durationTimerRef.current = null;
-                      }
                       if (rafRef.current) {
                         cancelAnimationFrame(rafRef.current);
                         rafRef.current = null;
                       }
                     }}
-                    onPlaying={(e) => {
+                    onPlaying={() => {
                       setIsMediaReady(true);
                       setIsBuffering(false);
-                      const cur = e.currentTarget.currentTime;
-                      const dur = previewDurationRef.current;
-                      const remainingTime = Math.max(0, dur - cur) * 1000;
-                      if (durationTimerRef.current) {
-                        clearTimeout(durationTimerRef.current);
-                      }
-                      durationTimerRef.current = setTimeout(() => {
-                        handlePreviewEnd();
-                      }, remainingTime);
-                      startProgressAnimation();
+                      startDirectVideoProgress();
                     }}
-                    onTimeUpdate={(e) => {
-                      const cur = e.currentTarget.currentTime;
-                      const dur = previewDurationRef.current;
-                      if (cur >= dur) {
-                        e.currentTarget.pause();
-                        handlePreviewEnd();
-                      }
+                    onEnded={(e) => {
+                      try {
+                        e.currentTarget.currentTime = 0;
+                        e.currentTarget.play().catch(() => {});
+                      } catch {}
                     }}
-                    onEnded={handlePreviewEnd}
                     className="w-full h-full object-cover pointer-events-none"
                   />
                 )}
@@ -326,29 +435,17 @@ function GalleryCard({
             )}
 
             {/* ========================================================= */}
-            {/* DYNAMIC PROGRESS BAR INDICATOR (MAX 10S / DURASI ASLI)    */}
+            {/* DYNAMIC PROGRESS BAR INDICATOR (MAX 10S LOOPING)          */}
             {/* ========================================================= */}
             {isVideo && isPreviewActive && (
               <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/40 z-20 pointer-events-none overflow-hidden">
-                {isYouTube ? (
-                  <div
-                    className="h-full w-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] origin-left will-change-transform"
-                    style={{
-                      transform: isMediaReady ? 'scaleX(1)' : 'scaleX(0)',
-                      transition: isMediaReady
-                        ? `transform ${Math.round(previewDuration * 1000)}ms linear`
-                        : 'none',
-                    }}
-                  />
-                ) : (
-                  <div
-                    ref={progressBarRef}
-                    className="h-full w-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] origin-left will-change-transform"
-                    style={{
-                      transform: 'scaleX(0)',
-                    }}
-                  />
-                )}
+                <div
+                  ref={progressBarRef}
+                  className="h-full w-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.9)] origin-left will-change-transform"
+                  style={{
+                    transform: 'scaleX(0)',
+                  }}
+                />
               </div>
             )}
 

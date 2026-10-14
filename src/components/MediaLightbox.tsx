@@ -1208,7 +1208,7 @@ export default function MediaLightbox({
                 ref={videoIframeRef}
                 src={
                   getYouTubeEmbedUrl(activeMedia.videoUrl) ||
-                  'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&enablejsapi=1'
+                  'https://www.youtube-nocookie.com/embed/XyLoPRmUR3s?autoplay=1&loop=1&playlist=XyLoPRmUR3s&enablejsapi=1'
                 }
                 title={activeMedia.caption || currentItem.subcategoryLabel || 'YouTube Video Player'}
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -1234,6 +1234,7 @@ export default function MediaLightbox({
                   disablePictureInPicture
                   onContextMenu={(e) => e.preventDefault()}
                   autoPlay
+                  loop
                   playsInline
                   preload="metadata"
                   onLoadedMetadata={(e) => {
@@ -1250,6 +1251,12 @@ export default function MediaLightbox({
                   onPause={() => {
                     isVideoPlayingRef.current = false;
                     setIsVideoPlaying(false);
+                  }}
+                  onEnded={(e) => {
+                    try {
+                      e.currentTarget.currentTime = 0;
+                      e.currentTarget.play().catch(() => {});
+                    } catch {}
                   }}
                 />
               </div>

@@ -97,11 +97,16 @@ export function getYouTubeVideoId(url?: string): string | null {
  * Converts any YouTube URL or video ID into a clean, embeddable YouTube URL
  * that bypasses X-Frame-Options blocking.
  */
-export function getYouTubeEmbedUrl(urlOrId?: string, autoplay: boolean = true): string {
+export function getYouTubeEmbedUrl(
+  urlOrId?: string,
+  autoplay: boolean = true,
+  loop: boolean = true
+): string {
   if (!urlOrId) return '';
   const videoId = getYouTubeVideoId(urlOrId);
   if (!videoId) return urlOrId;
-  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}&rel=0&modestbranding=1&enablejsapi=1`;
+  const loopParams = loop ? `&loop=1&playlist=${videoId}` : '';
+  return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=${autoplay ? 1 : 0}${loopParams}&rel=0&modestbranding=1&enablejsapi=1`;
 }
 
 export function isYouTubeUrl(url?: string): boolean {
