@@ -312,6 +312,7 @@ export default function BulkInsertModal({
 
       let uploadedImageUrl = '';
       let uploadedVideoUrl: string | null = null;
+      let uploadedRatio: string | undefined = undefined;
 
       try {
 
@@ -330,6 +331,9 @@ export default function BulkInsertModal({
           setOverallStatusText(`Extracting thumbnail for ${item.name}...`);
           try {
             const posterFile = await captureVideoFrame(item.file, 1);
+            if ((posterFile as any).ratio) {
+              uploadedRatio = (posterFile as any).ratio;
+            }
             setOverallStatusText(`Uploading thumbnail for ${item.name}...`);
             const posterRes = await uploadToR2(posterFile);
             uploadedImageUrl = posterRes.url;
@@ -344,6 +348,7 @@ export default function BulkInsertModal({
           );
           const cldRes = await uploadToCloudinary(item.file);
           uploadedImageUrl = cldRes.url;
+          uploadedRatio = cldRes.ratio;
         }
 
         // Pre-commit verification for uploaded files
@@ -368,6 +373,7 @@ export default function BulkInsertModal({
           video_url: uploadedVideoUrl,
           description: defaultDescription.trim() || null,
           status: status,
+          ratio: uploadedRatio || (item.type === 'video' ? '0.7500' : '0.8000'),
         };
 
         if (isSupabaseConfigured && supabase) {

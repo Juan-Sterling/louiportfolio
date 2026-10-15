@@ -42,22 +42,57 @@ export interface DistributedColumns {
 /**
  * Helper to compute an item's rendered vertical pixel height (including margin gap mb-6/7).
  */
+// ============================================================================
+// FITUR ASPEK RASIO DATABASE & ROLLBACK CONTROLLER
+// - Set ke 'true' : Menggunakan kolom 'ratio' database (instan, stabil 100%, zero CLS)
+// - Set ke 'false': Rollback ke logika deteksi browser client-side sebelumnya
+// ============================================================================
+export const ENABLE_DB_RATIO = true;
+
+/**
+ * Parser string aspek rasio (mendukung format "16:9", "4:5", desimal "0.8000", atau "1080/1440").
+ */
+export function parseAspectValue(aspectStr?: string): number | undefined {
+  if (!aspectStr) return undefined;
+  const parts = aspectStr.split(/[:/]/);
+  if (parts.length === 2) {
+    const w = parseFloat(parts[0]);
+    const h = parseFloat(parts[1]);
+    if (w > 0 && h > 0) return w / h;
+  }
+  const parsed = parseFloat(aspectStr);
+  return !isNaN(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Helper to compute an item's rendered vertical pixel height (including margin gap mb-6/7).
+ * Menggunakan Sistem Cascading Fallback 3-Tier:
+ * - Tier 1 (Utama): Nilai presisi dari kolom 'ratio' / 'aspect' di Supabase Database.
+ * - Tier 2 (Fallback Client Dinamis): Logika deteksi browser (preloadAllImages tanpa img.decode untuk iPhone X).
+ *   Otomatis aktif jika kolom ratio di DB bernilai null/kosong, atau saat ENABLE_DB_RATIO = false (Rollback).
+ * - Tier 3 (Fallback Default Terakhir): Nilai standar jika koneksi lambat/gagal (0.8 portrait atau 1.7778 landscape).
+ */
 function getItemRenderHeight(item: MediaItem, aspectRatios?: Record<string, number>): number {
   const colWidth = 376;
   const colGap = 28; // mb-6 md:mb-7
   let aspect = 0.8; // Default 4:5 portrait
 
-  if (aspectRatios && aspectRatios[item.id] && aspectRatios[item.id] > 0) {
+  // [Tier 1] Ambil nilai rasio dari database terlebih dahulu jika diaktifkan
+  const parsedFromDb = ENABLE_DB_RATIO ? parseAspectValue(item.ratio || item.aspect) : undefined;
+
+  if (parsedFromDb) {
+    aspect = parsedFromDb;
+  }
+  // [Tier 2 - Logika Sebelumnya] Fallback ke hasil deteksi preload browser (kompatibel iPhone X)
+  else if (aspectRatios && aspectRatios[item.id] && aspectRatios[item.id] > 0) {
     aspect = aspectRatios[item.id];
-  } else if (item.aspect) {
-    const parts = item.aspect.split(/[:/]/);
-    if (parts.length === 2) {
-      const w = parseFloat(parts[0]);
-      const h = parseFloat(parts[1]);
-      if (w > 0 && h > 0) aspect = w / h;
-    }
-  } else if (item.type === 'video') {
-    aspect = 0.8;
+  }
+  // [Tier 3 - Fallback Default] Jika belum ada rasio, gunakan standar tipe media
+  else if (item.type === 'video') {
+    const isYouTube = item.videoUrl
+      ? item.videoUrl.includes('youtu.be') || item.videoUrl.includes('youtube.com')
+      : false;
+    aspect = isYouTube && !item.videoUrl?.includes('/shorts/') ? 1.7778 : 0.8;
   }
 
   // Constrain to reasonable bounds
@@ -455,6 +490,7 @@ export default function ModernGallery({
             order_index,
             slides,
             created_at,
+            ratio,
             subcategories:subcategory_id (
               id,
               label,
@@ -548,7 +584,8 @@ export default function ModernGallery({
               type: (d.type || 'photo') as 'photo' | 'video',
               image: getOptimizedCloudinaryUrl(d.image_url),
               videoUrl: d.video_url || undefined,
-              aspect: undefined,
+              aspect: d.ratio || d.aspect || undefined,
+              ratio: d.ratio || undefined,
               order_index: d.order_index ?? 0,
               created_at: d.created_at,
               slides: Array.isArray(d.slides)
@@ -662,8 +699,12 @@ export default function ModernGallery({
     ];
   }, [desktopColumns]);
 
-  // PRELOAD & DETECT IMAGE ASPECT RATIOS BEFORE DISPLAYING
-  // Dioptimalkan khusus agar kompatibel dengan Safari iOS 16 (iPhone X) tanpa memory overload atau hanging
+  // =========================================================================================
+  // LOGIKA SEBELUMNYA (PRELOAD & DETECT IMAGE ASPECT RATIOS BEFORE DISPLAYING)
+  // Dipertahankan 100% utuh sebagai Fallback Tier 2 jika ada ratio di database yang null/kosong,
+  // atau saat ingin rollback sewaktu-waktu (dengan mengubah konstanta ENABLE_DB_RATIO = false di atas).
+  // Dioptimalkan khusus agar kompatibel dengan Safari iOS 16 (iPhone X) tanpa memory overload atau hanging.
+  // =========================================================================================
   useEffect(() => {
     if (itemsToPreload.length === 0) {
       setIsArrangingLayout(false);
@@ -1098,7 +1139,10 @@ export default function ModernGallery({
                           hasMounted={hasMounted}
                           isInitialEntrance={isInitialEntrance}
                           onOpenLightbox={openLightbox}
-                          aspectRatio={aspectRatios[item.id]}
+                          aspectRatio={
+                            aspectRatios[item.id] ||
+                            (ENABLE_DB_RATIO ? parseAspectValue(item.ratio || item.aspect) : undefined)
+                          }
                         />
                       );
                     })}
@@ -1117,7 +1161,10 @@ export default function ModernGallery({
                           hasMounted={hasMounted}
                           isInitialEntrance={isInitialEntrance}
                           onOpenLightbox={openLightbox}
-                          aspectRatio={aspectRatios[item.id]}
+                          aspectRatio={
+                            aspectRatios[item.id] ||
+                            (ENABLE_DB_RATIO ? parseAspectValue(item.ratio || item.aspect) : undefined)
+                          }
                         />
                       );
                     })}
@@ -1136,7 +1183,10 @@ export default function ModernGallery({
                           hasMounted={hasMounted}
                           isInitialEntrance={isInitialEntrance}
                           onOpenLightbox={openLightbox}
-                          aspectRatio={aspectRatios[item.id]}
+                          aspectRatio={
+                            aspectRatios[item.id] ||
+                            (ENABLE_DB_RATIO ? parseAspectValue(item.ratio || item.aspect) : undefined)
+                          }
                         />
                       );
                     })}
@@ -1184,7 +1234,10 @@ export default function ModernGallery({
                         hasMounted={hasMounted}
                         isInitialEntrance={isInitialEntrance}
                         onOpenLightbox={openLightbox}
-                        aspectRatio={aspectRatios[item.id]}
+                        aspectRatio={
+                          aspectRatios[item.id] ||
+                          (ENABLE_DB_RATIO ? parseAspectValue(item.ratio || item.aspect) : undefined)
+                        }
                       />
                     );
                   })}

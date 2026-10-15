@@ -27,6 +27,7 @@ export interface ContentFormData {
   image: string;
   videoUrl: string;
   status: 'draft' | 'published' | 'archived';
+  ratio?: string;
   slides?: MediaSlide[];
 }
 

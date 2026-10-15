@@ -36,6 +36,7 @@ export interface MediaItem {
   type: 'photo' | 'video';
   image: string;
   aspect?: string; // Optional legacy aspect ratio
+  ratio?: string;
   videoUrl?: string; // YouTube embed link for playable modal
   status?: 'draft' | 'published' | 'archived';
   order_index?: number;

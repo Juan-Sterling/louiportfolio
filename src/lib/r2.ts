@@ -327,6 +327,12 @@ export async function captureVideoFrame(
                 type: 'image/jpeg',
                 lastModified: Date.now(),
               });
+              const calculatedRatio = (canvas.width / canvas.height).toFixed(4);
+              Object.assign(file, {
+                ratio: calculatedRatio,
+                width: canvas.width,
+                height: canvas.height,
+              });
               resolve(file);
             } else {
               reject(new Error('Failed to generate thumbnail blob'));

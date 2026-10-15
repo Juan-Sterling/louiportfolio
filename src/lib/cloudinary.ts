@@ -19,6 +19,9 @@ export async function uploadToCloudinary(file: File): Promise<{
   publicId: string;
   format: string;
   resourceType: string;
+  width?: number;
+  height?: number;
+  ratio?: string;
 }> {
   if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) {
     throw new Error('GIF files are not allowed. Please upload PNG, JPG, WEBP, or AVIF.');
@@ -60,11 +63,19 @@ export async function uploadToCloudinary(file: File): Promise<{
 
   const data = await res.json();
   const rawUrl = data.secure_url || data.url;
+  const ratio =
+    data.width && data.height && data.height > 0
+      ? (data.width / data.height).toFixed(4)
+      : undefined;
+
   return {
     url: getOptimizedCloudinaryUrl(rawUrl),
     publicId: data.public_id,
     format: data.format,
     resourceType: data.resource_type,
+    width: data.width,
+    height: data.height,
+    ratio,
   };
 }
 

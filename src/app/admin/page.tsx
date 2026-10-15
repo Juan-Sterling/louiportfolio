@@ -229,6 +229,7 @@ export default function AdminPage() {
             order_index,
             slides,
             created_at,
+            ratio,
             subcategories:subcategory_id (
               id,
               label,
@@ -294,6 +295,8 @@ export default function AdminPage() {
           image: getOptimizedCloudinaryUrl(d.image_url),
           videoUrl: d.video_url || undefined,
           status: (d.status || 'published') as 'draft' | 'published' | 'archived',
+          ratio: d.ratio || undefined,
+          aspect: d.ratio || undefined,
           order_index: d.order_index ?? 0,
           created_at: d.created_at,
           slides: Array.isArray(d.slides)
@@ -681,6 +684,7 @@ export default function AdminPage() {
       image: '',
       videoUrl: '',
       status: 'published',
+      ratio: undefined,
       slides: [],
     });
     sessionUploadedImagesRef.current = [];
@@ -721,6 +725,7 @@ export default function AdminPage() {
       image: item.image || '',
       videoUrl: item.type === 'video' ? item.videoUrl || '' : '',
       status: item.status || 'published',
+      ratio: item.ratio || item.aspect || undefined,
       slides: item.slides ? [...item.slides] : [],
     });
     setIsContentModalOpen(true);
@@ -760,6 +765,7 @@ export default function AdminPage() {
 
       // If in video mode, upload thumbnail to Cloudflare R2; otherwise photo to Cloudinary
       let uploadedUrl = '';
+      let detectedRatio: string | undefined = undefined;
       if (contentFormData.type === 'video') {
         setUploadStatusText('Uploading thumbnail...');
         const res = await uploadToR2(file);
@@ -772,10 +778,15 @@ export default function AdminPage() {
       } else {
         const res = await uploadToCloudinary(file);
         uploadedUrl = res.url;
+        detectedRatio = res.ratio;
       }
 
       sessionUploadedImagesRef.current.push(uploadedUrl);
-      setContentFormData((prev) => ({ ...prev, image: uploadedUrl }));
+      setContentFormData((prev) => ({
+        ...prev,
+        image: uploadedUrl,
+        ratio: detectedRatio || prev.ratio,
+      }));
       showToast(
         contentFormData.type === 'video'
           ? 'Thumbnail uploaded successfully!'
@@ -863,6 +874,7 @@ export default function AdminPage() {
       setUploadStatusText('Extracting cover thumbnail from video...');
       try {
         const thumbFile = await captureVideoFrame(file, 1);
+        const videoRatio = (thumbFile as any).ratio;
         setUploadStatusText('Uploading thumbnail...');
         const thumbRes = await uploadToR2(thumbFile);
         thumbResUrl = thumbRes.url;
@@ -870,6 +882,7 @@ export default function AdminPage() {
         setContentFormData((prev) => ({
           ...prev,
           image: thumbRes.url,
+          ratio: videoRatio || prev.ratio,
         }));
       } catch (frameErr) {
         console.warn('Auto cover capture skipped:', frameErr);
@@ -1050,6 +1063,17 @@ export default function AdminPage() {
             }))
           : [];
 
+      let finalRatio = contentFormData.ratio;
+      if (
+        contentFormData.type === 'video' &&
+        finalVideoUrl &&
+        (finalVideoUrl.includes('youtu.be') || finalVideoUrl.includes('youtube.com'))
+      ) {
+        finalRatio = finalVideoUrl.includes('/shorts/') ? '0.8000' : '1.7778';
+      } else if (!finalRatio) {
+        finalRatio = contentFormData.type === 'video' ? '0.8000' : '0.8000';
+      }
+
       const payload = {
         description: contentFormData.description.trim() || null,
         subcategory_id: finalSubcatId,
@@ -1058,6 +1082,7 @@ export default function AdminPage() {
         video_url: finalVideoUrl,
         status: contentFormData.status,
         slides: optimizedSlides,
+        ratio: finalRatio,
       };
 
       // Pre-commit Verification (Solusi B): Verify physical existence of R2 media files before writing to Supabase

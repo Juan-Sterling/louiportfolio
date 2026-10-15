@@ -54,6 +54,7 @@ export async function getGalleryData(): Promise<{
         order_index,
         slides,
         created_at,
+        ratio,
         subcategories:subcategory_id (
           id,
           label,
@@ -142,7 +143,8 @@ export async function getGalleryData(): Promise<{
           type: (d.type || 'photo') as 'photo' | 'video',
           image: d.image_url,
           videoUrl: d.video_url || undefined,
-          aspect: d.aspect || undefined,
+          aspect: d.ratio || d.aspect || undefined,
+          ratio: d.ratio || undefined,
           order_index: d.order_index ?? 0,
           created_at: d.created_at,
           slides: Array.isArray(d.slides) ? d.slides : undefined,

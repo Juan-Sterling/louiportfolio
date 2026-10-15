@@ -47,7 +47,8 @@ export interface DBContent {
   type: 'photo' | 'video';
   image_url: string;
   video_url?: string;
-  aspect: string;
+  aspect?: string;
+  ratio?: string;
   status: 'draft' | 'published' | 'archived';
   order_index?: number;
   slides?: any[];
