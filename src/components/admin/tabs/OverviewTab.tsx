@@ -307,8 +307,15 @@ export default function OverviewTab({
                     </div>
 
                     <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span
+                        className={`text-[10px] font-mono capitalize ${
+                          item.status === 'draft'
+                            ? 'text-amber-400'
+                            : item.status === 'archived'
+                            ? 'text-neutral-400'
+                            : 'text-emerald-400'
+                        }`}
+                      >
                         {item.status || 'published'}
                       </span>
                       <button

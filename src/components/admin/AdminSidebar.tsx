@@ -33,10 +33,10 @@ export default function AdminSidebar({
   onOpenChangePassword,
 }: AdminSidebarProps) {
   return (
-    <aside className="w-full md:w-64 bg-[#131317] border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between p-6 shrink-0">
+    <aside className="w-full md:w-64 bg-[#131317] border-b md:border-b-0 md:border-r border-white/10 flex flex-col p-6 shrink-0 md:sticky md:top-0 md:h-screen md:self-start md:overflow-y-auto">
       <div>
         {/* Logo & Platform Name */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0 shadow-sm">
               <div className="relative w-full h-full">
@@ -60,11 +60,27 @@ export default function AdminSidebar({
           </div>
         </div>
 
+        {/* View Live Website (Prominent at top - Clean Monochrome Frosted Glass) */}
+        <Link
+          href="/"
+          target="_blank"
+          className="flex items-center justify-between px-3.5 py-2.5 mb-5 rounded-xl text-xs font-semibold uppercase tracking-wider text-neutral-200 bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 hover:border-white/20 transition-all hover:scale-[1.01] active:scale-[0.99] group shadow-sm"
+          title="Open live website in a new tab"
+        >
+          <span className="flex items-center gap-2">
+            <ExternalLink className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-colors" />
+            <span>View Live Website</span>
+          </span>
+          <span className="text-[10px] font-mono text-neutral-500 group-hover:text-neutral-200 group-hover:translate-x-0.5 transition-all">
+            ↗
+          </span>
+        </Link>
+
         {/* User Auth Info */}
         {currentUser && (
           <div className="mb-6 p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
-              <User className="w-4 h-4 text-emerald-400 shrink-0" />
+              <User className="w-4 h-4 text-neutral-300 shrink-0" />
               <span
                 className="text-xs font-mono text-neutral-300 truncate"
                 title={currentUser.email}
@@ -143,18 +159,6 @@ export default function AdminSidebar({
             <span>Gallery Layout</span>
           </button>
         </nav>
-      </div>
-
-      {/* Bottom Actions */}
-      <div className="pt-6 border-t border-white/10 flex flex-col gap-2.5">
-        <Link
-          href="/"
-          target="_blank"
-          className="flex items-center justify-between px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider text-neutral-300 bg-white/5 hover:bg-white/10 hover:text-white transition-all"
-        >
-          <span>View Live Website</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </Link>
       </div>
     </aside>
   );

@@ -17,6 +17,7 @@ export default function AdminHeader({ activeTab, onLogout }: AdminHeaderProps) {
           {activeTab === 'overview' && 'Portfolio Overview'}
           {activeTab === 'contents' && 'Manage Portfolio Works'}
           {activeTab === 'categories' && 'Categories & Subcategories'}
+          {activeTab === 'layout' && 'Gallery Layout'}
         </h2>
         <p className="text-xs text-neutral-400 font-sans mt-0.5">
           LOUI Portfolio Content Management

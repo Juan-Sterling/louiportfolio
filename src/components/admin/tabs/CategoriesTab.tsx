@@ -57,18 +57,18 @@ export default function CategoriesTab({
           <button
             type="button"
             onClick={() => onOpenCreateSubcategory()}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all"
+            className="flex items-center gap-2 bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 text-neutral-200 font-semibold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all shadow-sm active:scale-[0.98]"
           >
-            <FolderPlus className="w-4 h-4" />
-            <span>+ Add Subcategory</span>
+            <FolderPlus className="w-4 h-4 text-emerald-400" />
+            <span>Add Subcategory</span>
           </button>
           <button
             type="button"
             onClick={onOpenCreateCategory}
-            className="flex items-center gap-2 bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl hover:bg-neutral-200 transition-all shadow-md"
+            className="flex items-center gap-2 bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl hover:bg-neutral-200 transition-all shadow-md active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Add Category</span>
+            <span>Add Category</span>
           </button>
         </div>
       </div>
@@ -117,18 +117,18 @@ export default function CategoriesTab({
                   {/* Card Header */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono bg-white/10 text-white px-2.5 py-0.5 rounded-full">
+                      <span className="text-[11px] font-mono text-neutral-300 bg-[#16161d] border border-white/10 px-2.5 py-0.5 rounded-md">
                         {linkedContentsCount} Works
                       </span>
                       {isCatArchived ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                          <EyeOff className="w-3 h-3" />
-                          Hidden
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-medium text-amber-400 bg-[#16161d] border border-white/10 px-2.5 py-0.5 rounded-md">
+                          <EyeOff className="w-3 h-3 text-amber-400" />
+                          <span>Hidden</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                          <Eye className="w-3 h-3" />
-                          Visible
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-medium text-emerald-400 bg-[#16161d] border border-white/10 px-2.5 py-0.5 rounded-md">
+                          <Eye className="w-3 h-3 text-emerald-400" />
+                          <span>Visible</span>
                         </span>
                       )}
                     </div>
@@ -138,11 +138,7 @@ export default function CategoriesTab({
                       <button
                         type="button"
                         onClick={() => onToggleCategoryStatus?.(cat)}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                          isCatArchived
-                            ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300'
-                            : 'bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white'
-                        }`}
+                        className="w-7 h-7 rounded-lg bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 flex items-center justify-center transition-all"
                         title={
                           isCatArchived
                             ? 'Unhide Category (Make visible on main page)'
@@ -150,9 +146,9 @@ export default function CategoriesTab({
                         }
                       >
                         {isCatArchived ? (
-                          <EyeOff className="w-3.5 h-3.5" />
+                          <EyeOff className="w-3.5 h-3.5 text-amber-400" />
                         ) : (
-                          <Eye className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5 text-neutral-300 hover:text-white" />
                         )}
                       </button>
 
@@ -160,7 +156,7 @@ export default function CategoriesTab({
                       <button
                         type="button"
                         onClick={() => onOpenEditCategory(cat)}
-                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/15 text-neutral-300 hover:text-white flex items-center justify-center transition-all"
+                        className="w-7 h-7 rounded-lg bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 text-neutral-300 hover:text-white flex items-center justify-center transition-all"
                         title="Edit Category"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -170,18 +166,14 @@ export default function CategoriesTab({
                       <button
                         type="button"
                         onClick={() => onOpenDeleteCategory(cat)}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                          isCatInUse
-                            ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400'
-                            : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
-                        }`}
+                        className="w-7 h-7 rounded-lg bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 flex items-center justify-center transition-all"
                         title={
                           isCatInUse
                             ? `Category in use (${linkedContentsCount} works, ${childSubcategoriesCount} subcategories) - Click for details`
                             : 'Delete Category'
                         }
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className={`w-3.5 h-3.5 ${isCatInUse ? 'text-amber-400' : 'text-red-400'}`} />
                       </button>
                     </div>
                   </div>
@@ -193,8 +185,8 @@ export default function CategoriesTab({
                   </h3>
 
                   {isCatArchived && (
-                    <div className="mb-4 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center gap-2 font-sans">
-                      <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                    <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-[#16161d] border border-white/10 text-neutral-300 text-xs flex items-center gap-2.5 font-sans">
+                      <EyeOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                       <span>
                         Category is hidden. All contents in this category are automatically hidden (archived) from the main website.
                       </span>
@@ -252,8 +244,8 @@ export default function CategoriesTab({
                               {sub.label}
                             </span>
                             {isSubArchived ? (
-                              <span className="text-[9px] font-mono uppercase bg-neutral-800 text-amber-400/90 px-1.5 py-0.5 rounded flex items-center gap-1 font-semibold">
-                                <EyeOff className="w-2.5 h-2.5" /> Hidden
+                              <span className="text-[9px] font-mono uppercase bg-[#16161d] border border-white/10 text-amber-400 px-1.5 py-0.5 rounded-md flex items-center gap-1 font-medium">
+                                <EyeOff className="w-2.5 h-2.5 text-amber-400" /> Hidden
                               </span>
                             ) : (
                               subItemCount > 0 && (

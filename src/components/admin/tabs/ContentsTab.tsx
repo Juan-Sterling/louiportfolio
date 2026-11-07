@@ -174,10 +174,10 @@ export default function ContentsTab({
             <button
               type="button"
               onClick={() => onNavigateToLayout()}
-              className="bg-amber-500/15 hover:bg-amber-500 border border-amber-500/30 hover:border-amber-500 text-amber-300 hover:text-black font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+              className="bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 text-neutral-200 font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm active:scale-[0.98]"
               title="Manage Gallery Layout"
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
+              <LayoutGrid className="w-3.5 h-3.5 text-amber-400" />
               <span>Layout</span>
             </button>
           )}
@@ -185,28 +185,28 @@ export default function ContentsTab({
           <button
             type="button"
             onClick={onOpenBulkInsert}
-            className="bg-emerald-500/15 hover:bg-emerald-500 border border-emerald-500/30 hover:border-emerald-500 text-emerald-300 hover:text-black font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+            className="bg-[#18181f] hover:bg-[#22222b] border border-white/10 hover:border-white/20 text-neutral-200 font-semibold text-xs uppercase tracking-wider px-3.5 py-2 rounded-xl transition-all flex items-center gap-2 shadow-sm active:scale-[0.98]"
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>+ Bulk Insert</span>
+            <Layers className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Bulk Insert</span>
           </button>
 
           <button
             type="button"
             onClick={onOpenCreateContent}
-            className="bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2 rounded-xl hover:bg-neutral-200 transition-all flex items-center gap-1.5 shadow-sm"
+            className="bg-white text-black font-semibold text-xs uppercase tracking-wider px-4 py-2 rounded-xl hover:bg-neutral-200 transition-all flex items-center gap-1.5 shadow-sm active:scale-[0.98]"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Add New Work</span>
+            <span>Add New Work</span>
           </button>
         </div>
       </div>
 
       {/* Bulk Actions Floating Bar */}
       {selectedItemIds.length > 0 && (
-        <div className="bg-gradient-to-r from-emerald-500/15 via-[#1a1a20] to-[#15151a] border border-emerald-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xl animate-fadeIn">
+        <div className="bg-[#18181f] border border-white/15 rounded-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-2xl animate-fadeIn">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-mono font-bold text-xs border border-emerald-500/30">
+            <div className="w-8 h-8 rounded-xl bg-white/10 text-emerald-400 flex items-center justify-center font-mono font-bold text-xs border border-white/10">
               {selectedItemIds.length}
             </div>
             <div>
@@ -363,13 +363,13 @@ export default function ContentsTab({
                     {/* Type */}
                     <td className="py-4 px-6">
                       {item.type === 'video' ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full">
-                          <Video className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-red-400 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md">
+                          <Video className="w-3 h-3 text-red-400" />
                           <span>Video</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-full">
-                          <ImageIcon className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md">
+                          <ImageIcon className="w-3 h-3 text-sky-400" />
                           <span>Photo</span>
                         </span>
                       )}
@@ -397,16 +397,14 @@ export default function ContentsTab({
 
                         if (item.status === 'draft') {
                           return (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            <span className="inline-flex items-center text-[11px] font-mono font-medium text-amber-400 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md">
                               <span>Draft</span>
                             </span>
                           );
                         }
                         if (item.status === 'archived') {
                           return (
-                            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-neutral-400 bg-neutral-500/10 border border-neutral-500/20 px-2.5 py-1 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+                            <span className="inline-flex items-center text-[11px] font-mono font-medium text-neutral-400 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md">
                               <span>Archived</span>
                             </span>
                           );
@@ -414,10 +412,9 @@ export default function ContentsTab({
                         if (isCatArchived) {
                           return (
                             <span
-                              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-full"
+                              className="inline-flex items-center text-[11px] font-mono font-medium text-amber-300 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md"
                               title="Category is hidden (archived), so this work is automatically hidden from the main website."
                             >
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                               <span>Hidden (Cat)</span>
                             </span>
                           );
@@ -425,17 +422,15 @@ export default function ContentsTab({
                         if (isSubArchived) {
                           return (
                             <span
-                              className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-full"
+                              className="inline-flex items-center text-[11px] font-mono font-medium text-amber-300 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md"
                               title="Subcategory is hidden (archived), so this work is automatically hidden from the main website."
                             >
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                               <span>Hidden (Sub)</span>
                             </span>
                           );
                         }
                         return (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          <span className="inline-flex items-center text-[11px] font-mono font-medium text-emerald-400 bg-[#16161d] border border-white/10 px-2.5 py-1 rounded-md">
                             <span>Published</span>
                           </span>
                         );
