@@ -58,3 +58,7 @@ next-env.d.ts
 # AI / IDE workspace caches
 .agents/
 .gemini/
+
+# internal docs & AI agent configs (keep README.md)
+*.md
+!README.md
