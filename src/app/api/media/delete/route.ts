@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { verifyAdminSession } from '@/lib/serverAuth';
 
 export async function POST(request: Request) {
   try {
+    // 1. Enforce admin authentication
+    const auth = await verifyAdminSession(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
+    }
+
     const { publicId, resourceType = 'image' } = await request.json();
     if (!publicId) {
       return NextResponse.json({ error: 'Public ID is required' }, { status: 400 });

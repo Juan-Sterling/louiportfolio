@@ -1,3 +1,5 @@
+import { getAuthToken } from '@/lib/supabase';
+
 export const cloudinaryConfig = {
   cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '',
   uploadPreset: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '',
@@ -141,9 +143,15 @@ export async function deleteCloudinaryMedia(
   if (!publicId) return false;
 
   try {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch('/api/media/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ publicId, resourceType }),
     });
     return res.ok;

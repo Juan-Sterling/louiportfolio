@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { verifyAdminSession } from '@/lib/serverAuth';
 
 export async function POST(request: Request) {
   try {
+    // 1. Enforce admin authentication
+    const auth = await verifyAdminSession(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
+    }
+
     const { key } = await request.json();
 
     if (!key) {

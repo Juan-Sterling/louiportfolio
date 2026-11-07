@@ -1,3 +1,5 @@
+import { getAuthToken } from '@/lib/supabase';
+
 /**
  * Cloudflare R2 Storage Client Helper
  * Handles direct-to-R2 presigned uploads, client-side video frame capture,
@@ -82,12 +84,22 @@ export function resolveVideoPlayUrl(videoUrl?: string): string {
   return resolveR2MediaUrl(videoUrl);
 }
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = await getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 /**
  * Checks if R2 backend API is fully configured
  */
 export async function checkR2Status(): Promise<{ isConfigured: boolean; message?: string }> {
   try {
-    const res = await fetch('/api/media/r2/presigned');
+    const headers = await getAuthHeaders();
+    const res = await fetch('/api/media/r2/presigned', { headers });
     if (!res.ok) return { isConfigured: false };
     const data = await res.json();
     return { isConfigured: Boolean(data.isConfigured), message: data.message };
@@ -112,9 +124,10 @@ export async function uploadToR2(
   }
 
   // 1. Request presigned upload URL from our lightweight Next.js route
+  const headers = await getAuthHeaders();
   const presignRes = await fetch('/api/media/r2/presigned', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       filename: file.name,
       contentType: file.type || 'video/mp4',
@@ -190,9 +203,10 @@ export async function deleteR2Media(keyOrUrl: string): Promise<boolean> {
   if (!key) return false;
 
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('/api/media/r2/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ key }),
     });
     return res.ok;
@@ -210,9 +224,10 @@ export async function verifyR2Media(keyOrUrl: string): Promise<boolean> {
   if (!key) return false;
 
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('/api/media/r2/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ key }),
     });
     if (!res.ok) return false;
@@ -234,9 +249,10 @@ export async function verifyMultipleR2Media(
   if (keys.length === 0) return { allExist: true, missingKeys: [] };
 
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch('/api/media/r2/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ keys }),
     });
     if (!res.ok) return { allExist: false, missingKeys: keys };

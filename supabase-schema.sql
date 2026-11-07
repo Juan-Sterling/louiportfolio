@@ -106,24 +106,18 @@ CREATE POLICY "Public can view categories"
     ON categories FOR SELECT USING (true);
 CREATE POLICY "Authenticated can manage categories" 
     ON categories FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Anon dev can manage categories" 
-    ON categories FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- B. Subcategories (Publik bisa baca, Admin / Authenticated bisa kelola penuh)
 CREATE POLICY "Public can view subcategories" 
     ON subcategories FOR SELECT USING (true);
 CREATE POLICY "Authenticated can manage subcategories" 
     ON subcategories FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Anon dev can manage subcategories" 
-    ON subcategories FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- C. Contents (Publik hanya baca status 'published', Admin bisa kelola penuh)
 CREATE POLICY "Public can view published contents" 
     ON contents FOR SELECT USING (status = 'published');
 CREATE POLICY "Authenticated can manage contents" 
     ON contents FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Anon dev can manage contents" 
-    ON contents FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ==============================================================================
 -- 8. INITIAL SEED DATA

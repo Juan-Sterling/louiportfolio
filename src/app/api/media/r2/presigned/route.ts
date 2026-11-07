@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { verifyAdminSession } from '@/lib/serverAuth';
 
 function getR2Config() {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -27,7 +28,12 @@ function getR2Config() {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await verifyAdminSession(request);
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
+  }
+
   const config = getR2Config();
   return NextResponse.json({
     isConfigured: config.isConfigured,
@@ -40,6 +46,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    // 1. Enforce admin authentication
+    const auth = await verifyAdminSession(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 });
+    }
+
     const config = getR2Config();
     if (!config.isConfigured) {
       return NextResponse.json(

@@ -9,7 +9,7 @@ import {
   getYouTubeThumbnail,
   isYouTubeUrl,
 } from '@/data/portfolioData';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, syncAuthCookie } from '@/lib/supabase';
 import {
   uploadToCloudinary,
   deleteCloudinaryMedia,
@@ -415,6 +415,7 @@ export default function AdminPage() {
   const handleLogout = async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    syncAuthCookie(null);
     setCurrentUser(null);
     router.replace('/admin/login');
   };

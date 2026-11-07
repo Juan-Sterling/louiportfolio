@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { verifyAdminSession } from '@/lib/serverAuth';
 
 function cleanKey(raw: string): string {
   let cleaned = raw.split('?')[0].trim();
@@ -12,6 +13,12 @@ function cleanKey(raw: string): string {
 
 export async function POST(request: Request) {
   try {
+    // 1. Enforce admin authentication
+    const auth = await verifyAdminSession(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ exists: false, error: auth.error || 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const rawKeys: string[] = [];
 
